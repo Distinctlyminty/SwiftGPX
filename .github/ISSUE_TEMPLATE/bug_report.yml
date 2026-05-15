@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a parsing/serialization/API bug in SwiftGPX
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please include a minimal
+        reproduction so we can fix it quickly.
+  - type: input
+    id: version
+    attributes:
+      label: SwiftGPX version
+      placeholder: e.g. 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform / Swift version
+      placeholder: e.g. iOS 18 simulator, Swift 6.0
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you observe instead?
+      placeholder: |
+        I called GPXParser().parse(data) on a Strava export and got
+        invalidCoordinate("4.2e-5") instead of the parsed document.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: A small Swift snippet, plus the offending GPX (or a link to it). Without this, we may not be able to act on the report.
+      render: swift
+    validations:
+      required: true
+  - type: textarea
+    id: gpx
+    attributes:
+      label: Offending GPX (if applicable)
+      render: xml

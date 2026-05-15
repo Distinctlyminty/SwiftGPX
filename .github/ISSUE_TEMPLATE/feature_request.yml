@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest a new feature or API for SwiftGPX
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: motivation
+    attributes:
+      label: What problem does this solve?
+      description: A clear description of the use case and why the current API doesn't cover it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API
+      description: Sketch the public surface — types, methods, signatures. Discussion of trade-offs welcome.
+      render: swift
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches and why they fall short.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This stays within GPX 1.1 (or extends with a documented namespace, e.g. Garmin/ClueTrust)
+        - label: I'm willing to open a PR for this
