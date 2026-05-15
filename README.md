@@ -16,7 +16,7 @@ A modern, Swift 6 GPX 1.1 library for reading and writing GPS Exchange Format fi
 Add to your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/Sailr-Solutions-Ltd/SwiftGPX.git", from: "0.1.0")
+.package(url: "https://github.com/Distinctlyminty/SwiftGPX.git", from: "0.1.0")
 ```
 
 …and depend on the `SwiftGPX` library product.

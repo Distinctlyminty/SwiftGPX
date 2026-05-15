@@ -15,7 +15,7 @@ Once 1.0 ships, this table will be updated.
 
 To report a vulnerability privately:
 
-1. Open a [GitHub Security Advisory](https://github.com/Sailr-Solutions-Ltd/SwiftGPX/security/advisories/new) on this repo, **or**
+1. Open a [GitHub Security Advisory](https://github.com/Distinctlyminty/SwiftGPX/security/advisories/new) on this repo, **or**
 2. Email `security@sailr.co.uk` with details.
 
 You can expect:
