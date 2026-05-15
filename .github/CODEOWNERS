@@ -1,0 +1,6 @@
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Every change requires review from the listed owner. Add path-specific owners
+# below if SwiftGPX gains additional maintainers.
+
+*       @Distinctlyminty
