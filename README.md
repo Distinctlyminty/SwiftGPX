@@ -1,12 +1,14 @@
 # SwiftGPX
 
+[![Sponsor](https://img.shields.io/github/sponsors/Distinctlyminty?label=Sponsor&logo=GitHub&logoColor=white&color=ea4aaa)](https://github.com/sponsors/Distinctlyminty)
+
 A modern, Swift 6 GPX 1.1 library for reading and writing GPS Exchange Format files.
 
 - Pure-Swift, Foundation-only (no third-party dependencies).
 - Swift 6 strict concurrency. All public types are `Sendable`.
 - First-class fitness extensions — Garmin `TrackPointExtension` v1 & v2, ClueTrust — without regex hacks.
 - Round-trip safe: `parse(serialize(doc)) == doc` for every supported field.
-- Actor-isolated SAX parser keeps memory bounded on large recorded tracks.
+- SAX-based parser keeps memory bounded on large recorded tracks.
 - Works on iOS 17+, macOS 14+, watchOS 10+, tvOS 17+, visionOS 1+, and Linux.
 
 ## Install
