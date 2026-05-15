@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  macos:
+    name: macOS / Swift 6
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.0.app
+      - name: Build
+        run: swift build -Xswiftc -warnings-as-errors
+      - name: Test
+        run: swift test --enable-code-coverage
+
+  linux:
+    name: Linux / Swift 6
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build -Xswiftc -warnings-as-errors
+      - name: Test
+        run: swift test

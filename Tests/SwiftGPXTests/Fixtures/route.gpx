@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="PaddlePal" xmlns="http://www.topografix.com/GPX/1/1">
+  <rte>
+    <name>Derwent Water loop</name>
+    <rtept lat="54.594410" lon="-3.141190"></rtept>
+    <rtept lat="54.594355" lon="-3.141211"></rtept>
+    <rtept lat="54.594314" lon="-3.141248"></rtept>
+  </rte>
+</gpx>
