@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 /// SAX delegate that builds a ``GPXDocument`` as it walks the XML.
 ///

@@ -18,7 +18,6 @@ let package = Package(
             name: "SwiftGPX",
             swiftSettings: [
                 .swiftLanguageMode(.v6),
-                .enableUpcomingFeature("StrictConcurrency"),
             ]
         ),
         .testTarget(
