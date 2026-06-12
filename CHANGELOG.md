@@ -43,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"<app> with Barometer"` creator convention Strava uses to trust elevation data.
 - Bare `<heartrate>`, `<temperature>`, and `<power>` extension tags (Strava generic
   extensions, COROS exports) now parse into the typed `GPXExtensions` fields.
+- Analysis API: `GPXWaypoint.distance(to:)` (haversine), `GPXBounds(containing:)` /
+  `formUnion(_:)` and computed `bounds` on segments, tracks, and documents.
+- `GPXTrackSegment.statistics()` / `GPXTrack.statistics()` — distance, elapsed
+  duration, moving time (threshold-based, paddling-friendly 0.5 m/s default), and
+  elevation gain/loss.
+- Douglas–Peucker track simplification: `simplified(tolerance:)` on segments and
+  tracks (iterative, safe for 50k+-point recordings; kept points retain all values).
+- `GPXTrack.mergingSegments()` concatenates segments for uploads where GPS dropouts
+  would otherwise split a workout.
 
 ## [0.1.0] - 2026-05-15
 
