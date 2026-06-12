@@ -53,6 +53,8 @@ struct FixtureTests {
         let second = try #require(points[1].time)
         #expect(abs(second.timeIntervalSince1970 - 1_777_795_965.123) < 0.001)
         #expect(points.map(\.extensions?.cadence) == [71, 73, 74])
+        #expect(points.map(\.extensions?.heartRate) == [96, 99, 101])
+        #expect(points[0].extensions?.airTemperature == 11.0)
         #expect(points[0].extensions?.power == 180)
         try assertReserializationIsStable(document)
     }

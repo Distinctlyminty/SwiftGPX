@@ -233,15 +233,18 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
         }
 
         // <extensions> own leaf children (no Garmin wrapper).
+        // Aliases cover bare tags from Strava generic extensions and COROS exports:
+        // `heartrate` → heartRate, `temperature` → airTemperature. `temp` stays mapped to
+        // waterTemperature for ClueTrust GPXData compatibility.
         if case .extensions(var extensions, let parent) = stack.last {
             switch localName {
             case "extensions":
                 stack.removeLast()
                 attach(extensions: extensions, to: parent)
                 return
-            case "hr": extensions.heartRate = Int(text)
+            case "hr", "heartrate": extensions.heartRate = Int(text)
             case "cad", "cadence": extensions.cadence = Int(text)
-            case "atemp": extensions.airTemperature = Double(text)
+            case "atemp", "temperature": extensions.airTemperature = Double(text)
             case "wtemp", "temp": extensions.waterTemperature = Double(text)
             case "depth": extensions.depth = Double(text)
             case "speed": extensions.speed = Double(text)

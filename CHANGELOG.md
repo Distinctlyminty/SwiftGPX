@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GPXDocument.namespaces` preserves extra namespace declarations from the root
   `<gpx>` element so custom extensions round-trip with valid, declared prefixes.
   Custom extensions with undeclared prefixes are emitted with the prefix stripped.
+- `GPXDocument.validate()` reports every structural problem (out-of-range or
+  non-finite values) in one pass, and `validateForStrava()` adds Strava's upload
+  requirements: a `<time>` on every track point and monotonic timestamps.
+- `GPXSerializer.strava(appName:hasBarometer:)` preset — compact output with the
+  `"<app> with Barometer"` creator convention Strava uses to trust elevation data.
+- Bare `<heartrate>`, `<temperature>`, and `<power>` extension tags (Strava generic
+  extensions, COROS exports) now parse into the typed `GPXExtensions` fields.
 
 ## [0.1.0] - 2026-05-15
 
