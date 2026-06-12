@@ -20,6 +20,17 @@ jobs:
         run: swift build -Xswiftc -warnings-as-errors
       - name: Test
         run: swift test --enable-code-coverage
+      - name: Coverage report (gate at 90% lines)
+        run: |
+          xcrun llvm-cov report \
+            .build/debug/SwiftGPXPackageTests.xctest/Contents/MacOS/SwiftGPXPackageTests \
+            --instr-profile .build/debug/codecov/default.profdata \
+            --ignore-filename-regex='(Tests/|\.build/)' | tee coverage.txt
+          awk '/^TOTAL/ {
+            gsub(/%/, "", $10)
+            if ($10 + 0 < 90) { print "Line coverage " $10 "% is below the 90% floor"; exit 1 }
+            print "Line coverage: " $10 "%"
+          }' coverage.txt
 
   linux:
     name: Linux / Swift 6

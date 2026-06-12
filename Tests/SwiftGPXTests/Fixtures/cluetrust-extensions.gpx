@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="pytrainer" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxdata="http://www.cluetrust.com/XML/GPXDATA/1/0">
+  <trk>
+    <name>Interval session</name>
+    <trkseg>
+      <trkpt lat="54.5933490" lon="-3.1405820">
+        <ele>74.6</ele>
+        <time>2026-05-03T08:12:44Z</time>
+        <extensions>
+          <gpxdata:hr>96</gpxdata:hr>
+          <gpxdata:cadence>72</gpxdata:cadence>
+          <gpxdata:temp>11.5</gpxdata:temp>
+          <gpxdata:distance>0.0</gpxdata:distance>
+        </extensions>
+      </trkpt>
+      <trkpt lat="54.5933930" lon="-3.1406900">
+        <ele>74.6</ele>
+        <time>2026-05-03T08:12:45Z</time>
+        <extensions>
+          <gpxdata:hr>99</gpxdata:hr>
+          <gpxdata:cadence>74</gpxdata:cadence>
+          <gpxdata:temp>11.5</gpxdata:temp>
+          <gpxdata:distance>4.2</gpxdata:distance>
+        </extensions>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

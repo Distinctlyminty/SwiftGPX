@@ -150,6 +150,48 @@ struct SerializerTests {
         #expect(!xml.contains("mystery:"))
     }
 
+    @Test(arguments: [
+        (42.0, "42"),
+        (42.5, "42.5"),
+        (-0.0, "0"),
+        (0.1, "0.1"),
+        (14.50, "14.5"),
+        (3.1415926535, "3.1415927"),    // 7 decimal places max
+        (-3.2, "-3.2"),
+        (1_000_000.0, "1000000"),
+    ])
+    func formatNumberTable(value: Double, expected: String) {
+        #expect(formatNumber(value) == expected)
+    }
+
+    @Test func escapesAttributeValues() throws {
+        let document = GPXDocument(creator: "Test", waypoints: [
+            GPXWaypoint(latitude: 1, longitude: 2, links: [
+                GPXLink(href: "https://example.com/?a=1&b=\"x\"<>'"),
+            ]),
+        ])
+        let xml = try GPXSerializer().string(from: document)
+        #expect(xml.contains("href=\"https://example.com/?a=1&amp;b=&quot;x&quot;&lt;&gt;&apos;\""))
+    }
+
+    @Test func prettyPrintedOutputIsExactlyDeterministic() throws {
+        let document = GPXDocument(creator: "Pin", waypoints: [
+            GPXWaypoint(latitude: 54.5, longitude: -3.1, elevation: 10, name: "A"),
+        ])
+        let xml = try GPXSerializer().string(from: document)
+        let expected = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <gpx version="1.1" creator="Pin" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+          <wpt lat="54.500000" lon="-3.100000">
+            <ele>10</ele>
+            <name>A</name>
+          </wpt>
+        </gpx>
+
+        """
+        #expect(xml == expected)
+    }
+
     @Test func redeclaresHarvestedNamespaces() throws {
         let waypoint = GPXWaypoint(
             latitude: 1, longitude: 2,

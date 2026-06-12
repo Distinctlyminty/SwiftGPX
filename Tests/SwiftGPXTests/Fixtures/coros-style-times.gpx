@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="COROS Wearables" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Dawn session</name>
+    <trkseg>
+      <trkpt lat="54.5933490" lon="-3.1405820">
+        <ele>74.6</ele>
+        <time>2026-05-03T08:12:44.5Z</time>
+        <extensions>
+          <heartrate>96</heartrate>
+          <cadence>71</cadence>
+          <temperature>11.0</temperature>
+          <power>180</power>
+        </extensions>
+      </trkpt>
+      <trkpt lat="54.5933930" lon="-3.1406900">
+        <ele>74.6</ele>
+        <time>2026-05-03T09:12:45.123456+0100</time>
+        <extensions>
+          <heartrate>99</heartrate>
+          <cadence>73</cadence>
+          <temperature>11.0</temperature>
+          <power>184</power>
+        </extensions>
+      </trkpt>
+      <trkpt lat="54.5934480" lon="-3.1408070">
+        <ele>74.8</ele>
+        <time>2026-05-03T08:12:46</time>
+        <extensions>
+          <heartrate>101</heartrate>
+          <cadence>74</cadence>
+          <temperature>11.0</temperature>
+          <power>188</power>
+        </extensions>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

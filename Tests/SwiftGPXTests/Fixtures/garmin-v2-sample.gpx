@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Garmin Connect" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v2" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <link href="connect.garmin.com">
+      <text>Garmin Connect</text>
+    </link>
+    <time>2026-04-18T09:30:00Z</time>
+  </metadata>
+  <trk>
+    <name>Lake crossing</name>
+    <type>paddling</type>
+    <trkseg>
+      <trkpt lat="56.6547700" lon="9.9782390">
+        <ele>2.4</ele>
+        <time>2026-04-18T09:30:00Z</time>
+        <extensions>
+          <gpxtpx:TrackPointExtension>
+            <gpxtpx:hr>104</gpxtpx:hr>
+            <gpxtpx:wtemp>8.5</gpxtpx:wtemp>
+            <gpxtpx:speed>2.31</gpxtpx:speed>
+            <gpxtpx:course>184.2</gpxtpx:course>
+          </gpxtpx:TrackPointExtension>
+        </extensions>
+      </trkpt>
+      <trkpt lat="56.6546900" lon="9.9783410">
+        <ele>2.4</ele>
+        <time>2026-04-18T09:30:05Z</time>
+        <extensions>
+          <gpxtpx:TrackPointExtension>
+            <gpxtpx:hr>107</gpxtpx:hr>
+            <gpxtpx:wtemp>8.5</gpxtpx:wtemp>
+            <gpxtpx:speed>2.45</gpxtpx:speed>
+            <gpxtpx:course>185.0</gpxtpx:course>
+          </gpxtpx:TrackPointExtension>
+        </extensions>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>
