@@ -12,7 +12,7 @@ struct RoundTripTests {
                 name: "Start", comment: "Boat ramp", symbol: "Flag"
             ),
         ])
-        let xml = GPXSerializer(creator: "Test").data(from: original)
+        let xml = try GPXSerializer().data(from: original)
         let decoded = try GPXParser().parse(xml)
         #expect(decoded == original)
     }
@@ -32,7 +32,7 @@ struct RoundTripTests {
         let original = GPXDocument(creator: "Test", tracks: [
             GPXTrack(name: "Test track", segments: [segment]),
         ])
-        let xml = GPXSerializer(creator: "Test").data(from: original)
+        let xml = try GPXSerializer().data(from: original)
         let decoded = try GPXParser().parse(xml)
         #expect(decoded == original)
     }
@@ -44,7 +44,7 @@ struct RoundTripTests {
                 GPXWaypoint(latitude: 54.6, longitude: -3.2),
             ]),
         ])
-        let xml = GPXSerializer(creator: "Test").data(from: original)
+        let xml = try GPXSerializer().data(from: original)
         let decoded = try GPXParser().parse(xml)
         #expect(decoded == original)
     }
@@ -57,7 +57,7 @@ struct RoundTripTests {
             keywords: "paddle,sup"
         )
         let original = GPXDocument(creator: "Test", metadata: metadata)
-        let xml = GPXSerializer(creator: "Test").data(from: original)
+        let xml = try GPXSerializer().data(from: original)
         let decoded = try GPXParser().parse(xml)
         #expect(decoded.metadata == original.metadata)
     }

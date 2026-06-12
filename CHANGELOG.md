@@ -22,6 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Breaking:** empty leaf elements (`<name></name>`) now round-trip as empty strings
   instead of being dropped.
+- **Breaking:** `GPXSerializer.data(from:)` and `string(from:)` now `throw` —
+  non-finite numbers (NaN/infinity) and out-of-range coordinates raise
+  `GPXError.invalidValue` instead of producing invalid XML.
+- **Breaking:** `GPXSerializer(creator:)` now defaults to `nil`, which preserves
+  `GPXDocument.creator`; previously the default `"SwiftGPX"` silently replaced it.
+- **Breaking:** the parser now rejects GPX versions other than 1.0/1.1 with
+  `GPXError.unsupportedVersion`, and the serializer always emits `version="1.1"`.
+- The Garmin TrackPointExtension namespace is now version-aware: documents using
+  `speed`/`course`/`bearing` declare the v2 namespace; v1 is kept otherwise.
+
+### Added
+- `GPXDocument.namespaces` preserves extra namespace declarations from the root
+  `<gpx>` element so custom extensions round-trip with valid, declared prefixes.
+  Custom extensions with undeclared prefixes are emitted with the prefix stripped.
 
 ## [0.1.0] - 2026-05-15
 

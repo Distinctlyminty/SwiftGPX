@@ -82,8 +82,18 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
 
         switch localName {
         case "gpx":
-            if let version = attributeDict["version"] { document.version = version }
+            // Accept 1.0 and 1.1; a missing version attribute is treated as 1.1.
+            // Anything else is a structural failure — abort with unsupportedVersion.
+            if let version = attributeDict["version"] {
+                guard version == "1.0" || version == "1.1" else {
+                    error = .unsupportedVersion(version)
+                    parser.abortParsing()
+                    return
+                }
+                document.version = version
+            }
             if let creator = attributeDict["creator"] { document.creator = creator }
+            harvestNamespaces(attributeDict)
         case "metadata":
             stack.append(.metadata(GPXMetadata()))
         case "author":
@@ -422,6 +432,23 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
     }
 
     // MARK: - Helpers
+
+    /// Namespaces the library declares itself on output; harvesting them would duplicate
+    /// the declarations.
+    private static let managedNamespaceURIs: Set<String> = [
+        "http://www.topografix.com/GPX/1/0",
+        "http://www.topografix.com/GPX/1/1",
+        "http://www.w3.org/2001/XMLSchema-instance",
+        GPXSerializer.garminV1Namespace,
+        GPXSerializer.garminV2Namespace,
+    ]
+
+    private func harvestNamespaces(_ attributes: [String: String]) {
+        for (key, uri) in attributes where key.hasPrefix("xmlns:") {
+            guard !Self.managedNamespaceURIs.contains(uri) else { continue }
+            document.namespaces[String(key.dropFirst("xmlns:".count))] = uri
+        }
+    }
 
     private func flushCharacters() {}
 

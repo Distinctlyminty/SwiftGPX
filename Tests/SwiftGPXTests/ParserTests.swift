@@ -156,6 +156,28 @@ struct ParserTests {
         }
     }
 
+    @Test func rejectsUnsupportedVersion() async throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="2.0" creator="t"></gpx>
+        """
+        await #expect(throws: GPXError.unsupportedVersion("2.0")) {
+            _ = try GPXParser().parse(Data(xml.utf8))
+        }
+    }
+
+    @Test func acceptsGPX10Input() async throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.0" creator="OldApp" xmlns="http://www.topografix.com/GPX/1/0">
+        <wpt lat="54.5" lon="-3.1"><ele>10</ele></wpt>
+        </gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        #expect(document.version == "1.0")
+        #expect(document.waypoints.count == 1)
+    }
+
     @Test func emptyLeafElements() async throws {
         let xml = """
         <?xml version="1.0"?>
