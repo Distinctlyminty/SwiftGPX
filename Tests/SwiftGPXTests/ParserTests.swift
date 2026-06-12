@@ -70,6 +70,104 @@ struct ParserTests {
         }
     }
 
+    @Test func parsesBounds() async throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t"><metadata>
+        <bounds minlat="54.4" minlon="-3.2" maxlat="54.6" maxlon="-3.0"/>
+        </metadata></gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        let bounds = try #require(document.metadata?.bounds)
+        #expect(bounds == GPXBounds(minLatitude: 54.4, minLongitude: -3.2, maxLatitude: 54.6, maxLongitude: -3.0))
+    }
+
+    @Test(arguments: [
+        #"minlat="54.4" minlon="-3.2" maxlat="54.6""#,        // missing maxlon
+        #"minlat="abc" minlon="-3.2" maxlat="54.6" maxlon="-3.0""#,  // malformed minlat
+    ])
+    func skipsIncompleteBounds(attributes: String) async throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t"><metadata><bounds \(attributes)/></metadata></gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        #expect(document.metadata?.bounds == nil)
+    }
+
+    @Test func parsesCDATAContent() async throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t">
+        <metadata><desc><![CDATA[A & B <fast>]]></desc></metadata>
+        <trk><trkseg><trkpt lat="1" lon="2"><name><![CDATA[Pier & jetty]]></name></trkpt></trkseg></trk>
+        </gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        #expect(document.metadata?.description == "A & B <fast>")
+        #expect(document.tracks[0].segments[0].points[0].name == "Pier & jetty")
+    }
+
+    @Test func unknownWrapperChildrenDoNotLeakIntoParent() async throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t">
+        <metadata><foo><name>Leaked</name><bar><desc>Deep</desc></bar></foo><name>Real</name></metadata>
+        <trk><trkseg><trkpt lat="1" lon="2"><widget><ele>99</ele></widget></trkpt></trkseg></trk>
+        </gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        #expect(document.metadata?.name == "Real")
+        #expect(document.metadata?.description == nil)
+        #expect(document.tracks[0].segments[0].points[0].elevation == nil)
+    }
+
+    @Test func unknownLeafInsideExtensionsStillCapturedAsCustom() async throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t">
+        <trk><trkseg><trkpt lat="1" lon="2"><extensions><mystery>42</mystery></extensions></trkpt></trkseg></trk>
+        </gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        let extensions = try #require(document.tracks[0].segments[0].points[0].extensions)
+        #expect(extensions.custom == [GPXCustomExtension(qualifiedName: "mystery", value: "42")])
+    }
+
+    @Test func invalidTrackPointCoordinateThrowsSpecificError() async throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t">
+        <trk><trkseg><trkpt lat="abc" lon="1"><name>X</name></trkpt></trkseg></trk>
+        </gpx>
+        """
+        await #expect(throws: GPXError.invalidCoordinate("abc")) {
+            _ = try GPXParser().parse(Data(xml.utf8))
+        }
+    }
+
+    @Test func missingLongitudeThrows() async throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t"><wpt lat="1"></wpt></gpx>
+        """
+        await #expect(throws: GPXError.missingRequiredAttribute(element: "wpt", attribute: "lon")) {
+            _ = try GPXParser().parse(Data(xml.utf8))
+        }
+    }
+
+    @Test func emptyLeafElements() async throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t">
+        <wpt lat="1" lon="2"><ele></ele><name></name></wpt>
+        </gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        #expect(document.waypoints[0].elevation == nil)
+        #expect(document.waypoints[0].name == "")
+    }
+
     private func fixtureURL(named name: String, ext: String) throws -> URL {
         let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Fixtures")
         return try #require(url, "Fixture \(name).\(ext) not found")

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `<bounds>` with missing or malformed attributes is now skipped instead of silently
+  becoming `(0, 0, 0, 0)`.
+- CDATA sections (`<![CDATA[...]]>`) are no longer dropped — their text now lands in the
+  surrounding element's value.
+- Children of unknown wrapper elements no longer leak into the enclosing element (e.g.
+  `<metadata><foo><name>X</name></foo></metadata>` no longer sets the metadata name).
+- A waypoint with a missing or malformed `lat`/`lon` now aborts parsing immediately with
+  the specific error instead of continuing to the end of the document.
+- Timestamps with 1–6 fractional-second digits, compact UTC offsets (`+0100`), or a
+  missing zone designator (treated as UTC) now parse instead of silently becoming `nil`.
+
+### Changed
+- **Breaking:** empty leaf elements (`<name></name>`) now round-trip as empty strings
+  instead of being dropped.
+
 ## [0.1.0] - 2026-05-15
 
 ### Added
