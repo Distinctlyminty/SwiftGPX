@@ -14,6 +14,10 @@ public enum GPXError: Error, Sendable, Equatable {
     /// The document declared a GPX version this library doesn't support.
     case unsupportedVersion(String)
 
+    /// A numeric value in the document cannot be represented in valid GPX —
+    /// non-finite (NaN/infinity), or a latitude/longitude outside its legal range.
+    case invalidValue(element: String, value: Double)
+
     /// Could not read the data from the underlying URL.
     case ioFailure(String)
 }
@@ -29,6 +33,8 @@ extension GPXError: LocalizedError {
             return "Could not parse coordinate value '\(raw)'."
         case let .unsupportedVersion(version):
             return "GPX version '\(version)' is not supported."
+        case let .invalidValue(element, value):
+            return "Value \(value) for <\(element)> cannot be represented in valid GPX."
         case let .ioFailure(message):
             return "Could not read GPX data: \(message)"
         }

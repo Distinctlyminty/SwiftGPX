@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.0" creator="LegacyTracker" xmlns="http://www.topografix.com/GPX/1/0">
+  <name>Old export</name>
+  <wpt lat="54.5000000" lon="-3.1000000">
+    <ele>12.0</ele>
+    <time>2019-08-21T14:05:00Z</time>
+    <name>Slipway</name>
+  </wpt>
+  <trk>
+    <name>Legacy track</name>
+    <trkseg>
+      <trkpt lat="54.5001000" lon="-3.1001000">
+        <ele>12.1</ele>
+        <time>2019-08-21T14:05:10Z</time>
+      </trkpt>
+      <trkpt lat="54.5002000" lon="-3.1002000">
+        <ele>12.2</ele>
+        <time>2019-08-21T14:05:20Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

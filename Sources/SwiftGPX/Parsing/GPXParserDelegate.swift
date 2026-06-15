@@ -82,8 +82,18 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
 
         switch localName {
         case "gpx":
-            if let version = attributeDict["version"] { document.version = version }
+            // Accept 1.0 and 1.1; a missing version attribute is treated as 1.1.
+            // Anything else is a structural failure — abort with unsupportedVersion.
+            if let version = attributeDict["version"] {
+                guard version == "1.0" || version == "1.1" else {
+                    error = .unsupportedVersion(version)
+                    parser.abortParsing()
+                    return
+                }
+                document.version = version
+            }
             if let creator = attributeDict["creator"] { document.creator = creator }
+            harvestNamespaces(attributeDict)
         case "metadata":
             stack.append(.metadata(GPXMetadata()))
         case "author":
@@ -113,29 +123,44 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
             }
             stack.append(.link(GPXLink(href: href), parent: parent))
         case "bounds":
-            guard let metadata = currentMetadata() else { return }
+            // Lenient: a bounds element with missing or malformed attributes is skipped
+            // entirely rather than fabricating 0.0 coordinates.
+            guard let metadata = currentMetadata(),
+                  let minLat = Double(attributeDict["minlat"] ?? ""),
+                  let minLon = Double(attributeDict["minlon"] ?? ""),
+                  let maxLat = Double(attributeDict["maxlat"] ?? ""),
+                  let maxLon = Double(attributeDict["maxlon"] ?? "") else { return }
             var updated = metadata
             updated.bounds = GPXBounds(
-                minLatitude: Double(attributeDict["minlat"] ?? "") ?? 0,
-                minLongitude: Double(attributeDict["minlon"] ?? "") ?? 0,
-                maxLatitude: Double(attributeDict["maxlat"] ?? "") ?? 0,
-                maxLongitude: Double(attributeDict["maxlon"] ?? "") ?? 0
+                minLatitude: minLat,
+                minLongitude: minLon,
+                maxLatitude: maxLat,
+                maxLongitude: maxLon
             )
             replaceCurrentMetadata(updated)
         case "wpt":
-            guard let coord = parseCoord(attributeDict, element: "wpt") else { return }
+            guard let coord = parseCoord(attributeDict, element: "wpt") else {
+                parser.abortParsing()
+                return
+            }
             stack.append(.waypoint(GPXWaypoint(latitude: coord.lat, longitude: coord.lon), kind: .waypoint))
         case "rte":
             stack.append(.route(GPXRoute()))
         case "rtept":
-            guard let coord = parseCoord(attributeDict, element: "rtept") else { return }
+            guard let coord = parseCoord(attributeDict, element: "rtept") else {
+                parser.abortParsing()
+                return
+            }
             stack.append(.waypoint(GPXWaypoint(latitude: coord.lat, longitude: coord.lon), kind: .routePoint))
         case "trk":
             stack.append(.track(GPXTrack()))
         case "trkseg":
             stack.append(.trackSegment(GPXTrackSegment()))
         case "trkpt":
-            guard let coord = parseCoord(attributeDict, element: "trkpt") else { return }
+            guard let coord = parseCoord(attributeDict, element: "trkpt") else {
+                parser.abortParsing()
+                return
+            }
             stack.append(.waypoint(GPXWaypoint(latitude: coord.lat, longitude: coord.lon), kind: .trackPoint))
         case "extensions":
             guard let parent = currentExtensionsParent() else {
@@ -146,12 +171,22 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
         default:
             // Plain leaf elements (`name`, `desc`, `ele`, `time`, ...) — no frame needed; we
             // catch them by name on the end-tag using the accumulated character buffer.
-            break
+            // Unknown non-leaf elements get an `.unknown` frame so their children can't
+            // leak into the enclosing frame. Children of `<extensions>` stay unframed —
+            // they're captured as custom extensions in `didEndElement`.
+            if case .extensions = stack.last { break }
+            if !isLeafElement(localName) {
+                stack.append(.unknown)
+            }
         }
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         characterBuffer.append(string)
+    }
+
+    func parser(_ parser: XMLParser, foundCDATA CDATABlock: Data) {
+        characterBuffer.append(String(decoding: CDATABlock, as: UTF8.self))
     }
 
     func parser(_ parser: XMLParser, didEndElement elementName: String,
@@ -198,15 +233,18 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
         }
 
         // <extensions> own leaf children (no Garmin wrapper).
+        // Aliases cover bare tags from Strava generic extensions and COROS exports:
+        // `heartrate` → heartRate, `temperature` → airTemperature. `temp` stays mapped to
+        // waterTemperature for ClueTrust GPXData compatibility.
         if case .extensions(var extensions, let parent) = stack.last {
             switch localName {
             case "extensions":
                 stack.removeLast()
                 attach(extensions: extensions, to: parent)
                 return
-            case "hr": extensions.heartRate = Int(text)
+            case "hr", "heartrate": extensions.heartRate = Int(text)
             case "cad", "cadence": extensions.cadence = Int(text)
-            case "atemp": extensions.airTemperature = Double(text)
+            case "atemp", "temperature": extensions.airTemperature = Double(text)
             case "wtemp", "temp": extensions.waterTemperature = Double(text)
             case "depth": extensions.depth = Double(text)
             case "speed": extensions.speed = Double(text)
@@ -299,7 +337,8 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
     // MARK: - Leaf folding
 
     private func applyLeaf(elementName: String, text: String) {
-        guard !text.isEmpty || elementName == "year" else { return }
+        // Empty text is allowed through: `<name></name>` round-trips as an empty string,
+        // and numeric/date leaves naturally fall out as nil via the failable conversions.
         guard let top = stack.last else { return }
 
         switch top {
@@ -396,6 +435,23 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
     }
 
     // MARK: - Helpers
+
+    /// Namespaces the library declares itself on output; harvesting them would duplicate
+    /// the declarations.
+    private static let managedNamespaceURIs: Set<String> = [
+        "http://www.topografix.com/GPX/1/0",
+        "http://www.topografix.com/GPX/1/1",
+        "http://www.w3.org/2001/XMLSchema-instance",
+        GPXSerializer.garminV1Namespace,
+        GPXSerializer.garminV2Namespace,
+    ]
+
+    private func harvestNamespaces(_ attributes: [String: String]) {
+        for (key, uri) in attributes where key.hasPrefix("xmlns:") {
+            guard !Self.managedNamespaceURIs.contains(uri) else { continue }
+            document.namespaces[String(key.dropFirst("xmlns:".count))] = uri
+        }
+    }
 
     private func flushCharacters() {}
 

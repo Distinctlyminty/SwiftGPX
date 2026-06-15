@@ -23,13 +23,19 @@ public struct GPXDocument: Sendable, Codable, Equatable {
     /// Recorded tracks (`<trk>` elements).
     public var tracks: [GPXTrack]
 
+    /// Extra namespace declarations (prefix → URI) seen on the root `<gpx>` element,
+    /// excluding the GPX, `xsi`, and Garmin TrackPointExtension namespaces the library
+    /// manages itself. Preserved so custom extensions can round-trip with their prefixes.
+    public var namespaces: [String: String]
+
     public init(
         version: String = "1.1",
         creator: String,
         metadata: GPXMetadata? = nil,
         waypoints: [GPXWaypoint] = [],
         routes: [GPXRoute] = [],
-        tracks: [GPXTrack] = []
+        tracks: [GPXTrack] = [],
+        namespaces: [String: String] = [:]
     ) {
         self.version = version
         self.creator = creator
@@ -37,5 +43,6 @@ public struct GPXDocument: Sendable, Codable, Equatable {
         self.waypoints = waypoints
         self.routes = routes
         self.tracks = tracks
+        self.namespaces = namespaces
     }
 }
