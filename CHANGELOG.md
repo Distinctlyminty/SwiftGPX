@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.1] - 2026-06-16
+
+### Fixed
+- Truncated documents (input ending mid-element) now consistently raise
+  `GPXError.malformedXML` on Linux, matching Darwin. Linux's `XMLParser` does not flag the
+  truncation itself, so the parser now detects the unclosed elements directly.
+
+## [2.0.0] - 2026-06-15
 
 ### Fixed
 - `<bounds>` with missing or malformed attributes is now skipped instead of silently
@@ -18,9 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the specific error instead of continuing to the end of the document.
 - Timestamps with 1–6 fractional-second digits, compact UTC offsets (`+0100`), or a
   missing zone designator (treated as UTC) now parse instead of silently becoming `nil`.
-- Truncated documents (input ending mid-element) now consistently raise
-  `GPXError.malformedXML` on Linux, matching Darwin. Linux's `XMLParser` does not flag the
-  truncation itself, so the parser now detects the unclosed elements directly.
 
 ### Changed
 - **Breaking:** empty leaf elements (`<name></name>`) now round-trip as empty strings
