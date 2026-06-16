@@ -47,6 +47,14 @@ public struct GPXParser: Sendable {
             )
         }
         if let error = delegate.error { throw error }
+        // Darwin's XMLParser flags truncated input as a parse error; Linux's does not, so we
+        // detect the unclosed elements ourselves and surface the same malformedXML error.
+        if delegate.hasUnterminatedElements {
+            throw GPXError.malformedXML(
+                line: parser.lineNumber,
+                message: "unexpected end of document"
+            )
+        }
         return delegate.document
     }
 }

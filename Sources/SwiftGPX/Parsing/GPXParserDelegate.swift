@@ -16,6 +16,13 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
     private var stack: [Frame] = []
     private var characterBuffer: String = ""
 
+    /// True when the parser stopped with element frames still open. A balanced document
+    /// always unwinds back to the lone `.document` frame, so a deeper stack means the input
+    /// ended mid-element. We check this explicitly because swift-corelibs-foundation's
+    /// `XMLParser` (Linux) does not report truncated XML as a parse error the way the
+    /// libxml2-backed Darwin parser does — without it, truncated input parses "successfully".
+    var hasUnterminatedElements: Bool { stack.count > 1 }
+
     // MARK: - Frame model
 
     private enum Frame {

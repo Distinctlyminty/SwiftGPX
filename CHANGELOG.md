@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the specific error instead of continuing to the end of the document.
 - Timestamps with 1–6 fractional-second digits, compact UTC offsets (`+0100`), or a
   missing zone designator (treated as UTC) now parse instead of silently becoming `nil`.
+- Truncated documents (input ending mid-element) now consistently raise
+  `GPXError.malformedXML` on Linux, matching Darwin. Linux's `XMLParser` does not flag the
+  truncation itself, so the parser now detects the unclosed elements directly.
 
 ### Changed
 - **Breaking:** empty leaf elements (`<name></name>`) now round-trip as empty strings
