@@ -47,6 +47,25 @@ struct ValidationTests {
         #expect(issues.contains(.nonFiniteValue(element: "speed", path: path)))
     }
 
+    /// `validate()` promises to find everything the serializer would reject, which
+    /// includes extensions attached to routes, tracks, and segments — not just points.
+    @Test func reportsNonFiniteValuesInContainerExtensions() {
+        let document = GPXDocument(
+            creator: "Test",
+            routes: [GPXRoute(extensions: GPXExtensions(depth: .nan))],
+            tracks: [GPXTrack(
+                segments: [GPXTrackSegment(extensions: GPXExtensions(speed: .infinity))],
+                extensions: GPXExtensions(power: -.infinity)
+            )]
+        )
+        #expect(document.validate() == [
+            .nonFiniteValue(element: "depth", path: "routes[0].extensions"),
+            .nonFiniteValue(element: "power", path: "tracks[0].extensions"),
+            .nonFiniteValue(element: "speed", path: "tracks[0].segments[0].extensions"),
+        ])
+        #expect(throws: GPXError.self) { _ = try GPXSerializer().string(from: document) }
+    }
+
     @Test func reportsOutOfRangeBounds() {
         var metadata = GPXMetadata()
         metadata.bounds = GPXBounds(minLatitude: -95, minLongitude: 0, maxLatitude: 0, maxLongitude: 0)
@@ -100,7 +119,7 @@ struct ValidationTests {
 
         let plain = try GPXSerializer.strava(appName: "PaddlePal").string(from: document)
         #expect(plain.contains("creator=\"PaddlePal\""))
-        #expect(!plain.contains("\n  "))
+        #expect(!plain.contains("\n"))
 
         let barometric = try GPXSerializer.strava(appName: "PaddlePal", hasBarometer: true).string(from: document)
         #expect(barometric.contains("creator=\"PaddlePal with Barometer\""))

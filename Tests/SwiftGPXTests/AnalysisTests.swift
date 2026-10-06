@@ -30,13 +30,13 @@ struct GeometryTests {
         #expect(GPXDocument(creator: "Test").bounds == nil)
     }
 
-    @Test func boundsContainAllPoints() {
+    @Test func boundsContainAllPoints() throws {
         let points = [
             GPXWaypoint(latitude: 54.5, longitude: -3.1),
             GPXWaypoint(latitude: 54.7, longitude: -3.3),
             GPXWaypoint(latitude: 54.6, longitude: -3.0),
         ]
-        let bounds = try! #require(GPXBounds(containing: points))
+        let bounds = try #require(GPXBounds(containing: points))
         #expect(bounds == GPXBounds(minLatitude: 54.5, minLongitude: -3.3, maxLatitude: 54.7, maxLongitude: -3.0))
     }
 
@@ -173,6 +173,13 @@ struct SimplificationTests {
         #expect(segment.simplified(tolerance: 5).points.count == 3)
         #expect(segment.simplified(tolerance: 5).points[1] == corner)
         #expect(segment.simplified(tolerance: 500).points.count == 2)
+    }
+
+    @Test func straightLineAcrossAntimeridianCollapses() {
+        let segment = GPXTrackSegment(points: [179.998, 179.999, -179.9995, -179.999, -179.998].map {
+            GPXWaypoint(latitude: 0, longitude: $0)
+        })
+        #expect(segment.simplified(tolerance: 5).points.map(\.longitude) == [179.998, -179.998])
     }
 
     @Test func keptPointsRetainAllValues() {

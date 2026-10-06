@@ -13,177 +13,156 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
     private(set) var document = GPXDocument(creator: "")
     var error: GPXError?
 
+    /// True once a root `<gpx>` element has been opened. An XML document that never
+    /// produces one (swift-corelibs-foundation accepts empty input) is not GPX.
+    private(set) var foundRoot = false
+
     private var stack: [Frame] = []
     private var characterBuffer: String = ""
 
-    /// True when the parser stopped with element frames still open. A balanced document
-    /// always unwinds back to the lone `.document` frame, so a deeper stack means the input
-    /// ended mid-element. We check this explicitly because swift-corelibs-foundation's
-    /// `XMLParser` (Linux) does not report truncated XML as a parse error the way the
-    /// libxml2-backed Darwin parser does — without it, truncated input parses "successfully".
-    var hasUnterminatedElements: Bool { stack.count > 1 }
+    /// True when the parser stopped with element frames still open. Every open element has
+    /// exactly one frame, so a balanced document always unwinds to an empty stack. We check
+    /// this explicitly because swift-corelibs-foundation's `XMLParser` (Linux) does not
+    /// report truncated XML as a parse error the way the libxml2-backed Darwin parser does —
+    /// without it, truncated input parses "successfully".
+    var hasUnterminatedElements: Bool { !stack.isEmpty }
 
     // MARK: - Frame model
 
+    /// One frame per open element, so the top of the stack is always the direct parent of
+    /// whatever opens or closes next. Containers are only recognised under the parent the
+    /// GPX schema gives them; anything else becomes `.leaf` or `.unknown` and can't leak
+    /// into an enclosing frame.
     private enum Frame {
         case document
         case metadata(GPXMetadata)
         case author(GPXPerson)
         case copyright(GPXCopyright)
-        case link(GPXLink, parent: LinkParent)
+        case link(GPXLink)
         case waypoint(GPXWaypoint, kind: WaypointKind)
         case route(GPXRoute)
         case track(GPXTrack)
         case trackSegment(GPXTrackSegment)
-        case extensions(GPXExtensions, parent: ExtensionsParent)
-        case garminTrackPointExtension(GPXExtensions, parent: ExtensionsParent)
+        case extensions(GPXExtensions)
+        case garminTrackPointExtension(GPXExtensions)
+        /// A child of `<extensions>` (at any depth). Elements that turn out to have child
+        /// elements are wrappers; the rest are leaves folded into the enclosing extensions.
+        case extensionElement(hasChildren: Bool)
+        /// A child of a known container whose text is folded into that container by name
+        /// when it closes (`name`, `ele`, `time`, …). Unrecognised names fold to nothing.
+        case leaf
+        /// An element that is ignored along with everything inside it.
         case unknown
     }
 
     private enum WaypointKind { case waypoint, routePoint, trackPoint }
 
-    private enum LinkParent {
-        case metadata
-        case author
-        case waypoint
-        case route
-        case track
-    }
-
-    private enum ExtensionsParent {
-        case waypoint
-        case route
-        case track
-        case trackSegment
-    }
-
     // MARK: - XMLParserDelegate
-
-    func parserDidStartDocument(_ parser: XMLParser) {
-        stack = [.document]
-    }
 
     func parser(
         _ parser: XMLParser, didStartElement elementName: String,
         namespaceURI: String?, qualifiedName: String?,
         attributes attributeDict: [String: String] = [:]
     ) {
-        flushCharacters()
         characterBuffer = ""
-
         let localName = stripPrefix(elementName)
 
-        // Garmin/ClueTrust extensions: handled regardless of namespace prefix.
-        if case let .extensions(extensions, parent) = stack.last,
-           isGarminTrackPointExtensionElement(elementName) {
-            stack[stack.count - 1] = .extensions(extensions, parent: parent)
-            stack.append(.garminTrackPointExtension(GPXExtensions(), parent: parent))
-            return
-        }
-        if case let .garminTrackPointExtension(extensions, parent) = stack.last {
-            // Children of TrackPointExtension are simple leaf elements; let foundCharacters
-            // accumulate text and fold in didEndElement.
-            stack[stack.count - 1] = .garminTrackPointExtension(extensions, parent: parent)
+        guard let top = stack.last else {
+            startRoot(elementName, localName: localName, attributes: attributeDict, parser: parser)
             return
         }
 
-        switch localName {
-        case "gpx":
-            // Accept 1.0 and 1.1; a missing version attribute is treated as 1.1.
-            // Anything else is a structural failure — abort with unsupportedVersion.
-            if let version = attributeDict["version"] {
-                guard version == "1.0" || version == "1.1" else {
-                    error = .unsupportedVersion(version)
-                    parser.abortParsing()
-                    return
-                }
-                document.version = version
+        switch top {
+        case .unknown, .leaf:
+            stack.append(.unknown)
+
+        case .extensions, .garminTrackPointExtension, .extensionElement:
+            if case .extensionElement(hasChildren: false) = top {
+                stack[stack.count - 1] = .extensionElement(hasChildren: true)
             }
-            if let creator = attributeDict["creator"] { document.creator = creator }
-            harvestNamespaces(attributeDict)
-        case "metadata":
-            stack.append(.metadata(GPXMetadata()))
-        case "author":
-            if case .metadata = stack.last { stack.append(.author(GPXPerson())) }
-            else { stack.append(.unknown) }
-        case "email":
-            if case let .author(person) = stack.last,
-               let id = attributeDict["id"], let domain = attributeDict["domain"] {
-                var updated = person
-                updated.email = "\(id)@\(domain)"
-                stack[stack.count - 1] = .author(updated)
-            }
-        case "copyright":
-            if let author = attributeDict["author"] {
-                stack.append(.copyright(GPXCopyright(author: author)))
+            // Garmin/ClueTrust extensions: handled regardless of namespace prefix.
+            if isGarminTrackPointExtensionElement(elementName) {
+                stack.append(.garminTrackPointExtension(GPXExtensions()))
             } else {
-                stack.append(.copyright(GPXCopyright(author: "")))
+                stack.append(.extensionElement(hasChildren: false))
             }
-        case "link":
-            guard let href = attributeDict["href"] else {
+
+        case .document:
+            switch localName {
+            case "metadata": stack.append(.metadata(GPXMetadata()))
+            case "wpt": startWaypoint(.waypoint, element: "wpt", attributes: attributeDict, parser: parser)
+            case "rte": stack.append(.route(GPXRoute()))
+            case "trk": stack.append(.track(GPXTrack()))
+            default: stack.append(.unknown)
+            }
+
+        case .metadata(var metadata):
+            switch localName {
+            case "author": stack.append(.author(GPXPerson()))
+            case "copyright": stack.append(.copyright(GPXCopyright(author: attributeDict["author"] ?? "")))
+            case "link": startLink(attributeDict)
+            case "bounds":
+                // Lenient: a bounds element with missing or malformed attributes is skipped
+                // entirely rather than fabricating 0.0 coordinates.
+                if let minLat = parseDouble(attributeDict["minlat"]),
+                   let minLon = parseDouble(attributeDict["minlon"]),
+                   let maxLat = parseDouble(attributeDict["maxlat"]),
+                   let maxLon = parseDouble(attributeDict["maxlon"]) {
+                    metadata.bounds = GPXBounds(
+                        minLatitude: minLat,
+                        minLongitude: minLon,
+                        maxLatitude: maxLat,
+                        maxLongitude: maxLon
+                    )
+                    stack[stack.count - 1] = .metadata(metadata)
+                }
                 stack.append(.unknown)
-                return
+            default: stack.append(.leaf)
             }
-            guard let parent = currentLinkParent() else {
+
+        case .author(var person):
+            switch localName {
+            case "email":
+                if let id = attributeDict["id"], let domain = attributeDict["domain"] {
+                    person.email = "\(id)@\(domain)"
+                    stack[stack.count - 1] = .author(person)
+                }
                 stack.append(.unknown)
-                return
+            case "link": startLink(attributeDict)
+            default: stack.append(.leaf)
             }
-            stack.append(.link(GPXLink(href: href), parent: parent))
-        case "bounds":
-            // Lenient: a bounds element with missing or malformed attributes is skipped
-            // entirely rather than fabricating 0.0 coordinates.
-            guard let metadata = currentMetadata(),
-                  let minLat = Double(attributeDict["minlat"] ?? ""),
-                  let minLon = Double(attributeDict["minlon"] ?? ""),
-                  let maxLat = Double(attributeDict["maxlat"] ?? ""),
-                  let maxLon = Double(attributeDict["maxlon"] ?? "") else { return }
-            var updated = metadata
-            updated.bounds = GPXBounds(
-                minLatitude: minLat,
-                minLongitude: minLon,
-                maxLatitude: maxLat,
-                maxLongitude: maxLon
-            )
-            replaceCurrentMetadata(updated)
-        case "wpt":
-            guard let coord = parseCoord(attributeDict, element: "wpt") else {
-                parser.abortParsing()
-                return
+
+        case .copyright, .link:
+            stack.append(.leaf)
+
+        case .waypoint:
+            switch localName {
+            case "link": startLink(attributeDict)
+            case "extensions": stack.append(.extensions(GPXExtensions()))
+            default: stack.append(.leaf)
             }
-            stack.append(.waypoint(GPXWaypoint(latitude: coord.lat, longitude: coord.lon), kind: .waypoint))
-        case "rte":
-            stack.append(.route(GPXRoute()))
-        case "rtept":
-            guard let coord = parseCoord(attributeDict, element: "rtept") else {
-                parser.abortParsing()
-                return
+
+        case .route:
+            switch localName {
+            case "rtept": startWaypoint(.routePoint, element: "rtept", attributes: attributeDict, parser: parser)
+            case "link": startLink(attributeDict)
+            case "extensions": stack.append(.extensions(GPXExtensions()))
+            default: stack.append(.leaf)
             }
-            stack.append(.waypoint(GPXWaypoint(latitude: coord.lat, longitude: coord.lon), kind: .routePoint))
-        case "trk":
-            stack.append(.track(GPXTrack()))
-        case "trkseg":
-            stack.append(.trackSegment(GPXTrackSegment()))
-        case "trkpt":
-            guard let coord = parseCoord(attributeDict, element: "trkpt") else {
-                parser.abortParsing()
-                return
+
+        case .track:
+            switch localName {
+            case "trkseg": stack.append(.trackSegment(GPXTrackSegment()))
+            case "link": startLink(attributeDict)
+            case "extensions": stack.append(.extensions(GPXExtensions()))
+            default: stack.append(.leaf)
             }
-            stack.append(.waypoint(GPXWaypoint(latitude: coord.lat, longitude: coord.lon), kind: .trackPoint))
-        case "extensions":
-            guard let parent = currentExtensionsParent() else {
-                stack.append(.unknown)
-                return
-            }
-            stack.append(.extensions(GPXExtensions(), parent: parent))
-        default:
-            // Plain leaf elements (`name`, `desc`, `ele`, `time`, ...) — no frame needed; we
-            // catch them by name on the end-tag using the accumulated character buffer.
-            // Unknown non-leaf elements get an `.unknown` frame so their children can't
-            // leak into the enclosing frame. Children of `<extensions>` stay unframed —
-            // they're captured as custom extensions in `didEndElement`.
-            if case .extensions = stack.last { break }
-            if !isLeafElement(localName) {
-                stack.append(.unknown)
+
+        case .trackSegment:
+            switch localName {
+            case "trkpt": startWaypoint(.trackPoint, element: "trkpt", attributes: attributeDict, parser: parser)
+            case "extensions": stack.append(.extensions(GPXExtensions()))
+            default: stack.append(.unknown)
             }
         }
     }
@@ -202,151 +181,142 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
         let text = characterBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
         let localName = stripPrefix(elementName)
 
-        // Drain Garmin TrackPointExtension children first, since they look like ordinary
-        // leaf elements but live under our garminTrackPointExtension frame.
-        if case .garminTrackPointExtension(var extensions, let parent) = stack.last {
-            if isGarminTrackPointExtensionElement(elementName) {
-                // Closing the TrackPointExtension wrapper itself.
-                stack.removeLast()
-                guard case let .extensions(outer, outerParent) = stack.last else { return }
-                var merged = outer
-                merged.heartRate = merged.heartRate ?? extensions.heartRate
-                merged.cadence = merged.cadence ?? extensions.cadence
-                merged.airTemperature = merged.airTemperature ?? extensions.airTemperature
-                merged.waterTemperature = merged.waterTemperature ?? extensions.waterTemperature
-                merged.depth = merged.depth ?? extensions.depth
-                merged.speed = merged.speed ?? extensions.speed
-                merged.course = merged.course ?? extensions.course
-                merged.bearing = merged.bearing ?? extensions.bearing
-                stack[stack.count - 1] = .extensions(merged, parent: outerParent)
-                return
-            }
-            switch localName {
-            case "hr": extensions.heartRate = Int(text)
-            case "cad", "cadence": extensions.cadence = Int(text)
-            case "atemp": extensions.airTemperature = Double(text)
-            case "wtemp", "temp": extensions.waterTemperature = Double(text)
-            case "depth": extensions.depth = Double(text)
-            case "speed": extensions.speed = Double(text)
-            case "course": extensions.course = Double(text)
-            case "bearing": extensions.bearing = Double(text)
-            default:
-                if !text.isEmpty {
-                    extensions.custom.append(GPXCustomExtension(qualifiedName: elementName, value: text))
-                }
-            }
-            stack[stack.count - 1] = .garminTrackPointExtension(extensions, parent: parent)
-            return
-        }
+        // Popping first hands us the only reference to the closing frame's value, and
+        // leaves its parent on top of the stack.
+        guard let frame = stack.popLast() else { return }
+        let parent = stack.count - 1
 
-        // <extensions> own leaf children (no Garmin wrapper).
-        // Aliases cover bare tags from Strava generic extensions and COROS exports:
-        // `heartrate` → heartRate, `temperature` → airTemperature. `temp` stays mapped to
-        // waterTemperature for ClueTrust GPXData compatibility.
-        if case .extensions(var extensions, let parent) = stack.last {
-            switch localName {
-            case "extensions":
-                stack.removeLast()
-                attach(extensions: extensions, to: parent)
-                return
-            case "hr", "heartrate": extensions.heartRate = Int(text)
-            case "cad", "cadence": extensions.cadence = Int(text)
-            case "atemp", "temperature": extensions.airTemperature = Double(text)
-            case "wtemp", "temp": extensions.waterTemperature = Double(text)
-            case "depth": extensions.depth = Double(text)
-            case "speed": extensions.speed = Double(text)
-            case "course": extensions.course = Double(text)
-            case "bearing": extensions.bearing = Double(text)
-            case "power": extensions.power = Double(text)
-            default:
-                if !text.isEmpty {
-                    extensions.custom.append(GPXCustomExtension(qualifiedName: elementName, value: text))
-                }
-            }
-            stack[stack.count - 1] = .extensions(extensions, parent: parent)
-            return
-        }
-
-        // Top-of-stack frame closures.
-        switch (localName, stack.last) {
-        case ("metadata", .metadata(let metadata)?):
-            stack.removeLast()
-            document.metadata = metadata
-            return
-        case ("author", .author(let person)?):
-            stack.removeLast()
-            if let parent = currentMetadata() {
-                var updated = parent
-                updated.author = person
-                replaceCurrentMetadata(updated)
-            }
-            return
-        case ("copyright", .copyright(let copyright)?):
-            stack.removeLast()
-            if let parent = currentMetadata() {
-                var updated = parent
-                updated.copyright = copyright
-                replaceCurrentMetadata(updated)
-            }
-            return
-        case ("link", .link(let link, let parent)?):
-            stack.removeLast()
-            attach(link: link, to: parent)
-            return
-        case ("wpt", .waypoint(let waypoint, .waypoint)?):
-            stack.removeLast()
-            document.waypoints.append(waypoint)
-            return
-        case ("rtept", .waypoint(let waypoint, .routePoint)?):
-            stack.removeLast()
-            if case var .route(route) = stack.last {
-                route.points.append(waypoint)
-                stack[stack.count - 1] = .route(route)
-            }
-            return
-        case ("trkpt", .waypoint(let waypoint, .trackPoint)?):
-            stack.removeLast()
-            if case var .trackSegment(segment) = stack.last {
-                segment.points.append(waypoint)
-                stack[stack.count - 1] = .trackSegment(segment)
-            }
-            return
-        case ("rte", .route(let route)?):
-            stack.removeLast()
-            document.routes.append(route)
-            return
-        case ("trk", .track(let track)?):
-            stack.removeLast()
-            document.tracks.append(track)
-            return
-        case ("trkseg", .trackSegment(let segment)?):
-            stack.removeLast()
-            if case var .track(track) = stack.last {
-                track.segments.append(segment)
-                stack[stack.count - 1] = .track(track)
-            }
-            return
-        default:
+        switch frame {
+        case .document, .unknown:
             break
+        case .leaf:
+            applyLeaf(elementName: localName, text: text)
+        case .extensionElement(let hasChildren):
+            // Wrappers contribute nothing themselves — their leaf descendants already folded.
+            if !hasChildren {
+                applyExtensionLeaf(qualifiedName: elementName, localName: localName, text: text)
+            }
+        case .garminTrackPointExtension(let inner):
+            mergeIntoEnclosingExtensions(inner)
+        case .extensions(let extensions):
+            // An `<extensions>` block that carried nothing is treated as absent, matching
+            // the serializer, which never emits an empty block.
+            guard !extensions.isEmpty else { return }
+            switch stack[parent] {
+            case .waypoint(var waypoint, let kind):
+                waypoint.extensions = extensions
+                stack[parent] = .waypoint(waypoint, kind: kind)
+            case .route(var route):
+                route.extensions = extensions
+                stack[parent] = .route(route)
+            case .track(var track):
+                track.extensions = extensions
+                stack[parent] = .track(track)
+            case .trackSegment(var segment):
+                segment.extensions = extensions
+                stack[parent] = .trackSegment(segment)
+            default:
+                break
+            }
+        case .metadata(let metadata):
+            document.metadata = metadata
+        case .author(let person):
+            if case .metadata(var metadata) = stack[parent] {
+                metadata.author = person
+                stack[parent] = .metadata(metadata)
+            }
+        case .copyright(let copyright):
+            if case .metadata(var metadata) = stack[parent] {
+                metadata.copyright = copyright
+                stack[parent] = .metadata(metadata)
+            }
+        case .link(let link):
+            attach(link: link, toFrameAt: parent)
+        case .waypoint(let waypoint, .waypoint):
+            document.waypoints.append(waypoint)
+        // The point arrays below are large. Each parent frame is overwritten with a
+        // placeholder before appending so the array is uniquely referenced and grows in
+        // place — otherwise every point would copy the whole array (quadratic parse time).
+        case .waypoint(let waypoint, .routePoint):
+            if case .route(var route) = stack[parent] {
+                stack[parent] = .unknown
+                route.points.append(waypoint)
+                stack[parent] = .route(route)
+            }
+        case .waypoint(let waypoint, .trackPoint):
+            if case .trackSegment(var segment) = stack[parent] {
+                stack[parent] = .unknown
+                segment.points.append(waypoint)
+                stack[parent] = .trackSegment(segment)
+            }
+        case .route(let route):
+            document.routes.append(route)
+        case .track(let track):
+            document.tracks.append(track)
+        case .trackSegment(let segment):
+            if case .track(var track) = stack[parent] {
+                stack[parent] = .unknown
+                track.segments.append(segment)
+                stack[parent] = .track(track)
+            }
         }
+    }
 
-        if localName == "gpx" { return }
+    // MARK: - Element starts
 
-        // Leaf element belonging to the current open frame.
-        applyLeaf(elementName: localName, text: text)
+    private func startRoot(
+        _ elementName: String, localName: String, attributes: [String: String], parser: XMLParser
+    ) {
+        guard localName == "gpx" else {
+            error = .malformedXML(
+                line: parser.lineNumber,
+                message: "root element is <\(elementName)>, expected <gpx>"
+            )
+            parser.abortParsing()
+            return
+        }
+        // Accept 1.0 and 1.1; a missing version attribute is treated as 1.1.
+        // Anything else is a structural failure — abort with unsupportedVersion.
+        if let version = attributes["version"] {
+            guard version == "1.0" || version == "1.1" else {
+                error = .unsupportedVersion(version)
+                parser.abortParsing()
+                return
+            }
+            document.version = version
+        }
+        if let creator = attributes["creator"] { document.creator = creator }
+        harvestNamespaces(attributes)
+        foundRoot = true
+        stack.append(.document)
+    }
 
-        // Any other stack frame (unknown wrapper) just pops away when its tag closes.
-        if case .unknown = stack.last, !isLeafElement(localName) {
-            stack.removeLast()
+    private func startWaypoint(
+        _ kind: WaypointKind, element: String, attributes: [String: String], parser: XMLParser
+    ) {
+        guard let coord = parseCoord(attributes, element: element) else {
+            parser.abortParsing()
+            return
+        }
+        stack.append(.waypoint(GPXWaypoint(latitude: coord.lat, longitude: coord.lon), kind: kind))
+    }
+
+    private func startLink(_ attributes: [String: String]) {
+        if let href = attributes["href"] {
+            stack.append(.link(GPXLink(href: href)))
+        } else {
+            stack.append(.unknown)
         }
     }
 
     // MARK: - Leaf folding
 
+    /// Folds a closed leaf element into the frame on top of the stack (its parent).
     private func applyLeaf(elementName: String, text: String) {
         // Empty text is allowed through: `<name></name>` round-trips as an empty string,
         // and numeric/date leaves naturally fall out as nil via the failable conversions.
         guard let top = stack.last else { return }
+        let index = stack.count - 1
 
         switch top {
         case var .metadata(metadata):
@@ -357,47 +327,63 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
             case "keywords": metadata.keywords = text
             default: return
             }
-            stack[stack.count - 1] = .metadata(metadata)
+            stack[index] = .metadata(metadata)
         case var .author(person):
             switch elementName {
             case "name": person.name = text
             default: return
             }
-            stack[stack.count - 1] = .author(person)
+            stack[index] = .author(person)
         case var .copyright(copyright):
             switch elementName {
-            case "year": copyright.year = Int(text)
+            case "year": copyright.year = parseInt(text)
             case "license": copyright.license = URL(string: text)
             default: return
             }
-            stack[stack.count - 1] = .copyright(copyright)
-        case .link(var link, let parent):
+            stack[index] = .copyright(copyright)
+        case var .link(link):
             switch elementName {
             case "text": link.text = text
             case "type": link.type = text
             default: return
             }
-            stack[stack.count - 1] = .link(link, parent: parent)
+            stack[index] = .link(link)
         case .waypoint(var waypoint, let kind):
             apply(leaf: elementName, value: text, to: &waypoint)
-            stack[stack.count - 1] = .waypoint(waypoint, kind: kind)
+            stack[index] = .waypoint(waypoint, kind: kind)
         case var .route(route):
-            apply(leafToTrackOrRoute: elementName, value: text, to: &route)
-            stack[stack.count - 1] = .route(route)
+            switch elementName {
+            case "name": route.name = text
+            case "cmt": route.comment = text
+            case "desc": route.description = text
+            case "src": route.source = text
+            case "number": route.number = parseInt(text)
+            case "type": route.type = text
+            default: return
+            }
+            stack[index] = .route(route)
         case var .track(track):
-            apply(leafToTrackOrRoute: elementName, value: text, to: &track)
-            stack[stack.count - 1] = .track(track)
+            switch elementName {
+            case "name": track.name = text
+            case "cmt": track.comment = text
+            case "desc": track.description = text
+            case "src": track.source = text
+            case "number": track.number = parseInt(text)
+            case "type": track.type = text
+            default: return
+            }
+            stack[index] = .track(track)
         default:
-            _ = top
+            break
         }
     }
 
     private func apply(leaf name: String, value: String, to point: inout GPXWaypoint) {
         switch name {
-        case "ele": point.elevation = Double(value)
+        case "ele": point.elevation = parseDouble(value)
         case "time": point.time = GPXDateFormatter.date(from: value)
-        case "magvar": point.magneticVariation = Double(value)
-        case "geoidheight": point.geoidHeight = Double(value)
+        case "magvar": point.magneticVariation = parseDouble(value)
+        case "geoidheight": point.geoidHeight = parseDouble(value)
         case "name": point.name = value
         case "cmt": point.comment = value
         case "desc": point.description = value
@@ -405,40 +391,96 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
         case "sym": point.symbol = value
         case "type": point.type = value
         case "fix": point.fix = GPXFix(rawValue: value)
-        case "sat": point.satellites = Int(value)
-        case "hdop": point.horizontalDilution = Double(value)
-        case "vdop": point.verticalDilution = Double(value)
-        case "pdop": point.positionDilution = Double(value)
-        case "ageofdgpsdata": point.ageOfDGPSData = Double(value)
-        case "dgpsid": point.dgpsId = Int(value)
+        case "sat": point.satellites = parseInt(value)
+        case "hdop": point.horizontalDilution = parseDouble(value)
+        case "vdop": point.verticalDilution = parseDouble(value)
+        case "pdop": point.positionDilution = parseDouble(value)
+        case "ageofdgpsdata": point.ageOfDGPSData = parseDouble(value)
+        case "dgpsid": point.dgpsId = parseInt(value)
         default: break
         }
     }
 
-    private func apply<T>(leafToTrackOrRoute name: String, value: String, to container: inout T) {
-        if var route = container as? GPXRoute {
-            switch name {
-            case "name": route.name = value
-            case "cmt": route.comment = value
-            case "desc": route.description = value
-            case "src": route.source = value
-            case "number": route.number = Int(value)
-            case "type": route.type = value
-            default: return
+    // MARK: - Extensions
+
+    /// Folds a childless element from inside `<extensions>` into the nearest enclosing
+    /// extensions frame — the Garmin TrackPointExtension wrapper if one is open, otherwise
+    /// the `<extensions>` block itself.
+    private func applyExtensionLeaf(qualifiedName: String, localName: String, text: String) {
+        guard let index = stack.lastIndex(where: {
+            switch $0 {
+            case .extensions, .garminTrackPointExtension: return true
+            default: return false
             }
-            container = route as! T
-        } else if var track = container as? GPXTrack {
-            switch name {
-            case "name": track.name = value
-            case "cmt": track.comment = value
-            case "desc": track.description = value
-            case "src": track.source = value
-            case "number": track.number = Int(value)
-            case "type": track.type = value
-            default: return
-            }
-            container = track as! T
+        }) else { return }
+
+        switch stack[index] {
+        case .extensions(var extensions):
+            // Aliases cover bare tags from Strava generic extensions and COROS exports:
+            // `heartrate` → heartRate, `temperature` → airTemperature. `temp` stays mapped
+            // to waterTemperature for ClueTrust GPXData compatibility.
+            fold(qualifiedName: qualifiedName, localName: localName, text: text,
+                 into: &extensions, acceptsBareAliases: true)
+            stack[index] = .extensions(extensions)
+        case .garminTrackPointExtension(var extensions):
+            fold(qualifiedName: qualifiedName, localName: localName, text: text,
+                 into: &extensions, acceptsBareAliases: false)
+            stack[index] = .garminTrackPointExtension(extensions)
+        default:
+            break
         }
+    }
+
+    /// Sets the typed field a known extension element maps to. Anything else — an unknown
+    /// element, or a known one whose text isn't a usable number — is kept verbatim in
+    /// `custom` so no extension data is silently dropped.
+    private func fold(
+        qualifiedName: String, localName: String, text: String,
+        into extensions: inout GPXExtensions, acceptsBareAliases: Bool
+    ) {
+        func set<Value>(_ keyPath: WritableKeyPath<GPXExtensions, Value?>, _ value: Value?) {
+            if let value {
+                extensions[keyPath: keyPath] = value
+            } else if !text.isEmpty {
+                extensions.custom.append(GPXCustomExtension(qualifiedName: qualifiedName, value: text))
+            }
+        }
+
+        switch localName {
+        case "hr": set(\.heartRate, parseInt(text))
+        case "cad", "cadence": set(\.cadence, parseInt(text))
+        case "atemp": set(\.airTemperature, parseDouble(text))
+        case "wtemp", "temp": set(\.waterTemperature, parseDouble(text))
+        case "depth": set(\.depth, parseDouble(text))
+        case "speed": set(\.speed, parseDouble(text))
+        case "course": set(\.course, parseDouble(text))
+        case "bearing": set(\.bearing, parseDouble(text))
+        case "heartrate" where acceptsBareAliases: set(\.heartRate, parseInt(text))
+        case "temperature" where acceptsBareAliases: set(\.airTemperature, parseDouble(text))
+        case "power" where acceptsBareAliases: set(\.power, parseDouble(text))
+        default:
+            extensions.custom.append(GPXCustomExtension(qualifiedName: qualifiedName, value: text))
+        }
+    }
+
+    /// Merges a closed Garmin TrackPointExtension wrapper into its `<extensions>` block.
+    /// Values set directly on the block win over the wrapper's.
+    private func mergeIntoEnclosingExtensions(_ inner: GPXExtensions) {
+        guard let index = stack.lastIndex(where: {
+            if case .extensions = $0 { return true }
+            return false
+        }), case .extensions(var merged) = stack[index] else { return }
+
+        merged.heartRate = merged.heartRate ?? inner.heartRate
+        merged.cadence = merged.cadence ?? inner.cadence
+        merged.airTemperature = merged.airTemperature ?? inner.airTemperature
+        merged.waterTemperature = merged.waterTemperature ?? inner.waterTemperature
+        merged.depth = merged.depth ?? inner.depth
+        merged.speed = merged.speed ?? inner.speed
+        merged.course = merged.course ?? inner.course
+        merged.bearing = merged.bearing ?? inner.bearing
+        merged.custom.append(contentsOf: inner.custom)
+        stack[index] = .extensions(merged)
     }
 
     // MARK: - Helpers
@@ -460,8 +502,6 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
         }
     }
 
-    private func flushCharacters() {}
-
     private func stripPrefix(_ name: String) -> String {
         if let colon = name.firstIndex(of: ":") {
             return String(name[name.index(after: colon)...])
@@ -475,15 +515,20 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
         stripPrefix(qualifiedName) == "TrackPointExtension"
     }
 
-    private func isLeafElement(_ localName: String) -> Bool {
-        switch localName {
-        case "name", "desc", "ele", "time", "magvar", "geoidheight", "cmt", "src",
-             "sym", "type", "fix", "sat", "hdop", "vdop", "pdop", "ageofdgpsdata",
-             "dgpsid", "number", "keywords", "year", "license", "text":
-            return true
-        default:
-            return false
-        }
+    /// Parses a finite number. `Double.init` also accepts "nan" and "inf", which GPX can't
+    /// represent and the serializer would refuse to write back, so those become nil.
+    private func parseDouble(_ text: String?) -> Double? {
+        guard let text, let value = Double(text.trimmingCharacters(in: .whitespaces)),
+              value.isFinite else { return nil }
+        return value
+    }
+
+    /// Parses an integer, tolerating producers that write integral fields as decimals
+    /// (`<hr>72.0</hr>`).
+    private func parseInt(_ text: String) -> Int? {
+        if let value = Int(text) { return value }
+        guard let value = parseDouble(text) else { return nil }
+        return Int(exactly: value.rounded())
     }
 
     private func parseCoord(_ attributes: [String: String], element: String) -> (lat: Double, lon: Double)? {
@@ -495,137 +540,36 @@ final class GPXParserDelegate: NSObject, XMLParserDelegate {
             error = .missingRequiredAttribute(element: element, attribute: "lon")
             return nil
         }
-        guard let lat = Double(latString) else {
+        guard let lat = parseDouble(latString) else {
             error = .invalidCoordinate(latString)
             return nil
         }
-        guard let lon = Double(lonString) else {
+        guard let lon = parseDouble(lonString) else {
             error = .invalidCoordinate(lonString)
             return nil
         }
         return (lat, lon)
     }
 
-    private func currentMetadata() -> GPXMetadata? {
-        for frame in stack.reversed() {
-            if case let .metadata(metadata) = frame { return metadata }
-        }
-        return nil
-    }
-
-    private func replaceCurrentMetadata(_ updated: GPXMetadata) {
-        for index in stride(from: stack.count - 1, through: 0, by: -1) {
-            if case .metadata = stack[index] {
-                stack[index] = .metadata(updated)
-                return
-            }
-        }
-    }
-
-    private func currentLinkParent() -> LinkParent? {
-        for frame in stack.reversed() {
-            switch frame {
-            case .metadata: return .metadata
-            case .author: return .author
-            case .waypoint: return .waypoint
-            case .route: return .route
-            case .track: return .track
-            default: continue
-            }
-        }
-        return nil
-    }
-
-    private func currentExtensionsParent() -> ExtensionsParent? {
-        for frame in stack.reversed() {
-            switch frame {
-            case .waypoint: return .waypoint
-            case .route: return .route
-            case .track: return .track
-            case .trackSegment: return .trackSegment
-            default: continue
-            }
-        }
-        return nil
-    }
-
-    private func attach(link: GPXLink, to parent: LinkParent) {
-        switch parent {
-        case .metadata:
-            if let metadata = currentMetadata() {
-                var updated = metadata
-                updated.links.append(link)
-                replaceCurrentMetadata(updated)
-            }
-        case .author:
-            for index in stride(from: stack.count - 1, through: 0, by: -1) {
-                if case var .author(person) = stack[index] {
-                    person.link = link
-                    stack[index] = .author(person)
-                    return
-                }
-            }
-        case .waypoint:
-            for index in stride(from: stack.count - 1, through: 0, by: -1) {
-                if case .waypoint(var waypoint, let kind) = stack[index] {
-                    waypoint.links.append(link)
-                    stack[index] = .waypoint(waypoint, kind: kind)
-                    return
-                }
-            }
-        case .route:
-            for index in stride(from: stack.count - 1, through: 0, by: -1) {
-                if case var .route(route) = stack[index] {
-                    route.links.append(link)
-                    stack[index] = .route(route)
-                    return
-                }
-            }
-        case .track:
-            for index in stride(from: stack.count - 1, through: 0, by: -1) {
-                if case var .track(track) = stack[index] {
-                    track.links.append(link)
-                    stack[index] = .track(track)
-                    return
-                }
-            }
-        }
-    }
-
-    private func attach(extensions: GPXExtensions, to parent: ExtensionsParent) {
-        switch parent {
-        case .waypoint:
-            for index in stride(from: stack.count - 1, through: 0, by: -1) {
-                if case .waypoint(var waypoint, let kind) = stack[index] {
-                    waypoint.extensions = extensions
-                    stack[index] = .waypoint(waypoint, kind: kind)
-                    return
-                }
-            }
-        case .route:
-            for index in stride(from: stack.count - 1, through: 0, by: -1) {
-                if case var .route(route) = stack[index] {
-                    route.extensions = extensions
-                    stack[index] = .route(route)
-                    return
-                }
-            }
-        case .track:
-            for index in stride(from: stack.count - 1, through: 0, by: -1) {
-                if case var .track(track) = stack[index] {
-                    track.extensions = extensions
-                    stack[index] = .track(track)
-                    return
-                }
-            }
-        case .trackSegment:
-            for index in stride(from: stack.count - 1, through: 0, by: -1) {
-                if case var .trackSegment(segment) = stack[index] {
-                    segment.extensions = extensions
-                    stack[index] = .trackSegment(segment)
-                    return
-                }
-            }
+    private func attach(link: GPXLink, toFrameAt index: Int) {
+        switch stack[index] {
+        case .metadata(var metadata):
+            metadata.links.append(link)
+            stack[index] = .metadata(metadata)
+        case .author(var person):
+            person.link = link
+            stack[index] = .author(person)
+        case .waypoint(var waypoint, let kind):
+            waypoint.links.append(link)
+            stack[index] = .waypoint(waypoint, kind: kind)
+        case .route(var route):
+            route.links.append(link)
+            stack[index] = .route(route)
+        case .track(var track):
+            track.links.append(link)
+            stack[index] = .track(track)
+        default:
+            break
         }
     }
 }

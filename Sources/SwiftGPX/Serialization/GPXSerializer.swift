@@ -26,6 +26,9 @@ public struct GPXSerializer: Sendable {
     static let garminV1Namespace = "http://www.garmin.com/xmlschemas/TrackPointExtension/v1"
     static let garminV2Namespace = "http://www.garmin.com/xmlschemas/TrackPointExtension/v2"
 
+    /// Prefixes XML reserves for itself; they can never be declared by a document.
+    private static let reservedPrefixes: Set<String> = ["xml", "xmlns"]
+
     /// Serializes the document to UTF-8 encoded XML data.
     public func data(from document: GPXDocument) throws -> Data {
         Data(try string(from: document).utf8)
@@ -57,13 +60,20 @@ public struct GPXSerializer: Sendable {
                 ("xmlns:gpxtpx", garmin.v2 ? Self.garminV2Namespace : Self.garminV1Namespace)
             )
         }
-        // Re-declare namespaces harvested from the parsed input (sorted for determinism).
-        for prefix in document.namespaces.keys.sorted() {
-            rootAttributes.append(("xmlns:\(prefix)", document.namespaces[prefix]!))
-        }
-
-        var declaredPrefixes = Set(document.namespaces.keys)
+        var declaredPrefixes: Set<String> = ["xsi"]
         if garmin.any { declaredPrefixes.insert("gpxtpx") }
+
+        // Re-declare namespaces harvested from the parsed input (sorted for determinism).
+        // Declarations that would make the root element malformed are skipped: prefixes the
+        // library already declares itself (a repeated attribute), prefixes that aren't XML
+        // names, and empty URIs. Elements using a skipped prefix lose it, as for any other
+        // undeclared prefix.
+        for prefix in document.namespaces.keys.sorted() {
+            guard let uri = document.namespaces[prefix], !uri.isEmpty,
+                  isValidXMLName(prefix), !Self.reservedPrefixes.contains(prefix),
+                  declaredPrefixes.insert(prefix).inserted else { continue }
+            rootAttributes.append(("xmlns:\(prefix)", uri))
+        }
 
         writer.openElement("gpx", attributes: rootAttributes)
 
@@ -228,11 +238,12 @@ public struct GPXSerializer: Sendable {
 
         if hasGarmin(ext) {
             writer.openElement("gpxtpx:TrackPointExtension")
-            if let hr = ext.heartRate { writer.textElement("gpxtpx:hr", value: String(hr)) }
-            if let cad = ext.cadence { writer.textElement("gpxtpx:cad", value: String(cad)) }
+            // Child order is fixed by the TrackPointExtension schema's xsd:sequence.
             if let atemp = ext.airTemperature { writer.textElement("gpxtpx:atemp", value: try number(atemp, element: "atemp")) }
             if let wtemp = ext.waterTemperature { writer.textElement("gpxtpx:wtemp", value: try number(wtemp, element: "wtemp")) }
             if let depth = ext.depth { writer.textElement("gpxtpx:depth", value: try number(depth, element: "depth")) }
+            if let hr = ext.heartRate { writer.textElement("gpxtpx:hr", value: String(hr)) }
+            if let cad = ext.cadence { writer.textElement("gpxtpx:cad", value: String(cad)) }
             if let speed = ext.speed { writer.textElement("gpxtpx:speed", value: try number(speed, element: "speed")) }
             if let course = ext.course { writer.textElement("gpxtpx:course", value: try number(course, element: "course")) }
             if let bearing = ext.bearing { writer.textElement("gpxtpx:bearing", value: try number(bearing, element: "bearing")) }
@@ -244,6 +255,7 @@ public struct GPXSerializer: Sendable {
         for custom in ext.custom {
             // A prefix that was never declared on the root would make the output invalid —
             // strip it and emit the local name instead (validity over verbatim fidelity).
+            // Likewise, characters an element name can't contain are replaced with `_`.
             writer.textElement(
                 qualifiedName(custom.qualifiedName, declaredPrefixes: declaredPrefixes),
                 value: custom.value
@@ -295,12 +307,11 @@ public struct GPXSerializer: Sendable {
     }
 
     private func qualifiedName(_ name: String, declaredPrefixes: Set<String>) -> String {
-        guard let colon = name.firstIndex(of: ":") else { return name }
+        guard let colon = name.firstIndex(of: ":") else { return sanitizedXMLName(name) }
         let prefix = String(name[..<colon])
-        guard declaredPrefixes.contains(prefix) else {
-            return String(name[name.index(after: colon)...])
-        }
-        return name
+        let localName = sanitizedXMLName(String(name[name.index(after: colon)...]))
+        guard declaredPrefixes.contains(prefix) else { return localName }
+        return "\(prefix):\(localName)"
     }
 
     private func latitude(_ value: Double, element: String) throws -> String {
@@ -349,5 +360,6 @@ func formatNumber(_ value: Double) -> String {
     var s = String(format: "%.7f", value)
     while s.hasSuffix("0") { s.removeLast() }
     if s.hasSuffix(".") { s.removeLast() }
-    return s
+    // Values that round to zero at 7 places would otherwise print as "-0".
+    return s == "-0" ? "0" : s
 }

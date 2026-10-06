@@ -81,8 +81,13 @@ func perpendicularDistance(
 ) -> Double {
     let cosLat = cos(lineStart.latitude * .pi / 180)
     func project(_ p: GPXWaypoint) -> (x: Double, y: Double) {
-        (
-            x: earthRadius * (p.longitude - lineStart.longitude) * .pi / 180 * cosLat,
+        // Take the short way round, so a track crossing the antimeridian (179.9° → -179.9°)
+        // projects as a 0.2° step rather than a 359.8° one.
+        var deltaLongitude = p.longitude - lineStart.longitude
+        if deltaLongitude > 180 { deltaLongitude -= 360 }
+        if deltaLongitude < -180 { deltaLongitude += 360 }
+        return (
+            x: earthRadius * deltaLongitude * .pi / 180 * cosLat,
             y: earthRadius * (p.latitude - lineStart.latitude) * .pi / 180
         )
     }

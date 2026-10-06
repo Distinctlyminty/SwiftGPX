@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-10-06
+
+### Fixed
+- Parsing a track or route no longer takes quadratic time. Each closing `<trkpt>`/`<rtept>`
+  copied every point parsed so far, so a 20,000-point recording took seconds and an
+  80,000-point one took minutes; parse time is now linear in file size.
+- On Linux, `parse(_:)` and `parse(contentsOf:)` no longer reject documents larger than
+  10 MB with `GPXError.malformedXML`.
+- Elements inside `<extensions>` whose names match GPX structure (`metadata`, `wpt`, `trk`,
+  `link`, …) no longer overwrite the document's own metadata or add phantom waypoints,
+  tracks, and links. They are kept as custom extension data like any other element.
+- Structural elements are now only recognised under the parent the GPX schema gives them.
+  An attribute-only `<email>` or `<bounds>` inside an unknown wrapper no longer closes that
+  wrapper early (leaking the wrapper's later children into its parent), and containers
+  nested in unknown wrappers are ignored along with the wrapper.
+- Unknown children of a Garmin `TrackPointExtension` wrapper are no longer dropped — they
+  land in `GPXExtensions.custom` like other unrecognised extension elements.
+- Integer extension and waypoint values written as decimals (`<hr>72.0</hr>`,
+  `<sat>7.0</sat>`) now parse instead of becoming `nil`. A known extension element whose
+  text isn't a usable number is preserved in `custom` rather than discarded.
+- Childless custom extension elements (`<app:flag/>`) are preserved with an empty value, so
+  `GPXCustomExtension` values with an empty `value` now round-trip.
+- `NaN`/`inf` are no longer accepted as numbers: in `lat`/`lon` they raise
+  `GPXError.invalidCoordinate`, and in optional values (`<ele>NaN</ele>`, `<bounds>`) they
+  become `nil`. Previously they parsed into documents the serializer then refused to write.
+- An `<extensions>` block that carries no data now parses as `nil` rather than an empty
+  `GPXExtensions`, matching what the serializer emits for it.
+- An XML document whose root element is not `<gpx>` now raises `GPXError.malformedXML`
+  instead of parsing "successfully" into an empty document.
+- The serializer no longer emits malformed XML for text containing characters XML 1.0
+  cannot represent (most control characters) — they are dropped. Carriage returns, and
+  tabs/newlines in attribute values, are written as character references so they survive
+  a round trip instead of being normalized away by the reader.
+- `GPXDocument.namespaces` entries that would make the root element malformed — a prefix
+  the serializer already declares (`xsi`, or `gpxtpx` when Garmin fields are present), a
+  prefix that isn't a valid XML name, or an empty URI — are skipped instead of written.
+- Custom extension names containing characters an XML element name cannot hold are written
+  with those characters replaced by `_` instead of producing malformed XML.
+- Garmin `TrackPointExtension` children are now written in the order the Garmin schema
+  requires (`atemp`, `wtemp`, `depth`, `hr`, `cad`, `speed`, `course`, `bearing`).
+- `validate()` now reports non-finite values in route-, track-, and segment-level
+  extensions, which the serializer already rejected.
+- `simplified(tolerance:)` no longer keeps every point of a straight line that crosses the
+  antimeridian.
+- Numbers that round to zero at 7 decimal places are written as `0`, not `-0`.
+
 ## [2.0.1] - 2026-06-16
 
 ### Fixed

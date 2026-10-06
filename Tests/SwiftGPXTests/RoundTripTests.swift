@@ -192,6 +192,39 @@ struct RoundTripTests {
         try assertRoundTrips(GPXDocument(creator: "Test", routes: [GPXRoute(name: "Empty")]))
     }
 
+    @Test func emptyValuedCustomExtensionRoundTrips() async throws {
+        let original = GPXDocument(creator: "Test", waypoints: [
+            GPXWaypoint(latitude: 1, longitude: 2, extensions: GPXExtensions(
+                heartRate: 120,
+                custom: [
+                    GPXCustomExtension(qualifiedName: "flagged", value: ""),
+                    GPXCustomExtension(qualifiedName: "note", value: "x"),
+                ]
+            )),
+        ])
+        try assertRoundTrips(original)
+    }
+
+    /// Line endings and tabs survive both element text and attribute values, where an XML
+    /// parser would otherwise normalize a literal CR to LF and attribute whitespace to spaces.
+    @Test func lineBreaksAndTabsRoundTrip() async throws {
+        let original = GPXDocument(
+            creator: "Line 1\r\nLine 2\tTabbed",
+            metadata: GPXMetadata(
+                description: "Line 1\r\nLine 2\rLine 3\nLine 4",
+                links: [GPXLink(href: "https://example.com/a\tb\nc")]
+            )
+        )
+        try assertRoundTrips(original)
+    }
+
+    @Test func nonASCIITextRoundTrips() async throws {
+        let original = GPXDocument(creator: "Tëst 🛶", waypoints: [
+            GPXWaypoint(latitude: 1, longitude: 2, name: "Bassenthwaite — «naïve» 湖 👨‍👩‍👧"),
+        ])
+        try assertRoundTrips(original)
+    }
+
     @Test func emptyStringNameRoundTrips() async throws {
         let original = GPXDocument(creator: "Test", waypoints: [
             GPXWaypoint(latitude: 1, longitude: 2, name: ""),

@@ -55,7 +55,7 @@ struct ParserTests {
         <?xml version="1.0"?>
         <gpx version="1.1" creator="t"><wpt lon="1"></wpt></gpx>
         """
-        await #expect(throws: GPXError.missingRequiredAttribute(element: "wpt", attribute: "lat")) {
+        #expect(throws: GPXError.missingRequiredAttribute(element: "wpt", attribute: "lat")) {
             _ = try GPXParser().parse(Data(xml.utf8))
         }
     }
@@ -65,7 +65,7 @@ struct ParserTests {
         <?xml version="1.0"?>
         <gpx version="1.1" creator="t"><wpt lat="not-a-number" lon="1"></wpt></gpx>
         """
-        await #expect(throws: GPXError.invalidCoordinate("not-a-number")) {
+        #expect(throws: GPXError.invalidCoordinate("not-a-number")) {
             _ = try GPXParser().parse(Data(xml.utf8))
         }
     }
@@ -141,7 +141,7 @@ struct ParserTests {
         <trk><trkseg><trkpt lat="abc" lon="1"><name>X</name></trkpt></trkseg></trk>
         </gpx>
         """
-        await #expect(throws: GPXError.invalidCoordinate("abc")) {
+        #expect(throws: GPXError.invalidCoordinate("abc")) {
             _ = try GPXParser().parse(Data(xml.utf8))
         }
     }
@@ -151,7 +151,7 @@ struct ParserTests {
         <?xml version="1.0"?>
         <gpx version="1.1" creator="t"><wpt lat="1"></wpt></gpx>
         """
-        await #expect(throws: GPXError.missingRequiredAttribute(element: "wpt", attribute: "lon")) {
+        #expect(throws: GPXError.missingRequiredAttribute(element: "wpt", attribute: "lon")) {
             _ = try GPXParser().parse(Data(xml.utf8))
         }
     }
@@ -161,7 +161,7 @@ struct ParserTests {
         <?xml version="1.0"?>
         <gpx version="2.0" creator="t"></gpx>
         """
-        await #expect(throws: GPXError.unsupportedVersion("2.0")) {
+        #expect(throws: GPXError.unsupportedVersion("2.0")) {
             _ = try GPXParser().parse(Data(xml.utf8))
         }
     }
@@ -188,6 +188,190 @@ struct ParserTests {
         let document = try GPXParser().parse(Data(xml.utf8))
         #expect(document.waypoints[0].elevation == nil)
         #expect(document.waypoints[0].name == "")
+    }
+
+    // MARK: - Structure
+
+    @Test func nonGPXRootThrowsMalformedXML() throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Not GPX</name></Document></kml>
+        """
+        do {
+            _ = try GPXParser().parse(Data(xml.utf8))
+            Issue.record("expected malformedXML error")
+        } catch let error as GPXError {
+            // The line number comes from XMLParser and isn't identical across platforms.
+            guard case .malformedXML(_, let message) = error else {
+                Issue.record("expected malformedXML, got \(error)")
+                return
+            }
+            #expect(message == "root element is <kml>, expected <gpx>")
+        }
+    }
+
+    @Test func prefixedRootElementParses() throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <g:gpx version="1.1" creator="Prefixed" xmlns:g="http://www.topografix.com/GPX/1/1">
+        <g:wpt lat="1" lon="2"><g:name>A</g:name></g:wpt>
+        </g:gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        #expect(document.creator == "Prefixed")
+        #expect(document.waypoints.map(\.name) == ["A"])
+        #expect(document.namespaces.isEmpty)
+    }
+
+    /// Elements are only recognised under the parent the schema gives them. Anything
+    /// inside an unrecognised wrapper is ignored as a unit — including attribute-only
+    /// elements like `<email>` and `<bounds>`, which once closed the wrapper early.
+    @Test func misplacedElementsAreIgnored() throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="Outer">
+        <metadata>
+          <foo>
+            <email id="a" domain="b.com"/>
+            <bounds minlat="1" minlon="2" maxlat="3" maxlon="4"/>
+            <name>Leaked</name>
+            <link href="https://example.com/leaked"/>
+            <author><name>Leaked</name></author>
+            <copyright author="Leaked"/>
+          </foo>
+        </metadata>
+        <foo>
+          <gpx creator="Inner"/>
+          <wpt lat="1" lon="2"/>
+          <rte><rtept lat="1" lon="2"/></rte>
+          <trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk>
+        </foo>
+        <trk>
+          <wpt lat="1" lon="2"/>
+          <trkpt lat="1" lon="2"/>
+          <trkseg><link href="https://example.com/leaked"/><trkpt lat="5" lon="6"/></trkseg>
+        </trk>
+        </gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        #expect(document.creator == "Outer")
+        #expect(document.metadata == GPXMetadata())
+        #expect(document.waypoints.isEmpty)
+        #expect(document.routes.isEmpty)
+        #expect(document.tracks == [
+            GPXTrack(segments: [GPXTrackSegment(points: [GPXWaypoint(latitude: 5, longitude: 6)])]),
+        ])
+    }
+
+    @Test func nestedExtensionsFixtureDoesNotLeakIntoDocument() throws {
+        let url = try fixtureURL(named: "nested-extensions", ext: "gpx")
+        let document = try GPXParser().parse(contentsOf: url)
+
+        // Structural element names inside <extensions> stay extension data.
+        #expect(document.metadata == GPXMetadata(name: "Harbour loop"))
+        #expect(document.waypoints.count == 1)
+        #expect(document.tracks.count == 1)
+        #expect(document.namespaces == [
+            "gpxx": "http://www.garmin.com/xmlschemas/GpxExtensions/v3",
+            "app": "https://example.com/app/1",
+        ])
+
+        // Wrappers flatten to their leaves; a childless element is kept with an empty value.
+        #expect(document.waypoints[0].links.isEmpty)
+        #expect(document.waypoints[0].extensions == GPXExtensions(custom: [
+            GPXCustomExtension(qualifiedName: "gpxx:DisplayMode", value: "SymbolAndName"),
+            GPXCustomExtension(qualifiedName: "app:pinned", value: ""),
+        ]))
+
+        let points = try #require(document.tracks.first?.segments.first?.points)
+        #expect(points.count == 3)
+
+        // Decimal-formatted integers parse; unknown TrackPointExtension children survive.
+        #expect(points[0].links.isEmpty)
+        #expect(points[0].extensions == GPXExtensions(heartRate: 96, cadence: 71, custom: [
+            GPXCustomExtension(qualifiedName: "ns3:stress", value: "12"),
+            GPXCustomExtension(qualifiedName: "name", value: "Not the document name either"),
+            GPXCustomExtension(qualifiedName: "app:wpt", value: ""),
+            GPXCustomExtension(qualifiedName: "app:trkpt", value: ""),
+            GPXCustomExtension(qualifiedName: "app:link", value: ""),
+        ]))
+
+        // Non-finite numbers become nil; an unusable typed value is kept verbatim.
+        #expect(points[1].elevation == nil)
+        #expect(points[1].extensions == GPXExtensions(custom: [
+            GPXCustomExtension(qualifiedName: "ns3:hr", value: "resting"),
+        ]))
+
+        // An extensions block carrying nothing is absent, as the serializer would write it.
+        #expect(points[2].extensions == nil)
+
+        // Re-serialized output parses back to the same thing once prefixes are normalized.
+        let reserialized = try GPXSerializer().data(from: document)
+        expectSchemaShapedGPX(reserialized)
+        try assertRoundTrips(GPXParser().parse(reserialized))
+    }
+
+    @Test(arguments: ["nan", "inf", "-infinity"])
+    func nonFiniteCoordinateThrows(raw: String) throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t"><wpt lat="\(raw)" lon="1"/></gpx>
+        """
+        #expect(throws: GPXError.invalidCoordinate(raw)) {
+            _ = try GPXParser().parse(Data(xml.utf8))
+        }
+    }
+
+    @Test func nonFiniteOptionalValuesBecomeNil() throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t">
+        <metadata><bounds minlat="nan" minlon="-3.2" maxlat="54.6" maxlon="-3.0"/></metadata>
+        <wpt lat=" 1 " lon="2"><ele>inf</ele><hdop>NaN</hdop><sat>7.0</sat></wpt>
+        </gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        #expect(document.metadata?.bounds == nil)
+        #expect(document.waypoints == [GPXWaypoint(latitude: 1, longitude: 2, satellites: 7)])
+    }
+
+    @Test func valuesOutsideTheGarminWrapperWinOverThoseInside() throws {
+        let xml = """
+        <?xml version="1.0"?>
+        <gpx version="1.1" creator="t">
+        <wpt lat="1" lon="2"><extensions>
+        <hr>100</hr>
+        <gpxtpx:TrackPointExtension><gpxtpx:hr>90</gpxtpx:hr><gpxtpx:power>250</gpxtpx:power></gpxtpx:TrackPointExtension>
+        </extensions></wpt>
+        </gpx>
+        """
+        let document = try GPXParser().parse(Data(xml.utf8))
+        #expect(document.waypoints[0].extensions == GPXExtensions(heartRate: 100, custom: [
+            GPXCustomExtension(qualifiedName: "gpxtpx:power", value: "250"),
+        ]))
+    }
+
+    /// Appending each point used to copy the whole segment, making parse time quadratic —
+    /// minutes for a recording this size. The time limit is what guards against that.
+    /// The document is also deliberately over 10 MB, the size at which Linux's
+    /// `XMLParser(data:)` starts rejecting input.
+    @Test(.timeLimit(.minutes(1)))
+    func largeTrackParsesInLinearTime() throws {
+        let pointCount = 100_000
+        let points = (0..<pointCount).map {
+            GPXWaypoint(latitude: 54.5, longitude: -3.1, elevation: Double($0))
+        }
+        let original = GPXDocument(
+            creator: "Test",
+            routes: [GPXRoute(points: points)],
+            tracks: [GPXTrack(segments: [GPXTrackSegment(points: points)])]
+        )
+        let data = try GPXSerializer(prettyPrint: false).data(from: original)
+        #expect(data.count > 10_000_000)
+        let decoded = try GPXParser().parse(data)
+        #expect(decoded.routes.first?.points.count == pointCount)
+        #expect(decoded.tracks.first?.segments.first?.points.count == pointCount)
+        #expect(decoded.tracks.first?.segments.first?.points.last?.elevation == Double(pointCount - 1))
     }
 
     private func fixtureURL(named name: String, ext: String) throws -> URL {

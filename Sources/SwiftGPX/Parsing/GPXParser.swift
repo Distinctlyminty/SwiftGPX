@@ -14,7 +14,15 @@ public struct GPXParser: Sendable {
     /// Parses an in-memory GPX document.
     public func parse(_ data: Data) throws -> GPXDocument {
         let delegate = GPXParserDelegate()
-        return try Self.run(parser: XMLParser(data: data), delegate: delegate)
+        #if canImport(FoundationXML)
+        // swift-corelibs-foundation hands `XMLParser(data:)` input to libxml2 as a single
+        // chunk, which libxml2 rejects once it passes 10 MB — after every element has been
+        // delivered. Stream input is fed in small chunks and has no such limit.
+        let parser = XMLParser(stream: InputStream(data: data))
+        #else
+        let parser = XMLParser(data: data)
+        #endif
+        return try Self.run(parser: parser, delegate: delegate)
     }
 
     /// Reads a file at the given URL and parses it.
@@ -54,6 +62,9 @@ public struct GPXParser: Sendable {
                 line: parser.lineNumber,
                 message: "unexpected end of document"
             )
+        }
+        guard delegate.foundRoot else {
+            throw GPXError.malformedXML(line: parser.lineNumber, message: "no <gpx> root element")
         }
         return delegate.document
     }

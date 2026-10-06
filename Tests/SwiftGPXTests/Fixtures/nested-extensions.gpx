@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Garmin Connect" xmlns="http://www.topografix.com/GPX/1/1" xmlns:ns3="http://www.garmin.com/xmlschemas/TrackPointExtension/v1" xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3" xmlns:app="https://example.com/app/1">
+  <metadata>
+    <name>Harbour loop</name>
+    <extensions>
+      <app:export>
+        <name>Not the document name</name>
+      </app:export>
+    </extensions>
+  </metadata>
+  <wpt lat="54.5000000" lon="-3.1000000">
+    <name>Slipway</name>
+    <extensions>
+      <gpxx:WaypointExtension>
+        <gpxx:DisplayMode>SymbolAndName</gpxx:DisplayMode>
+      </gpxx:WaypointExtension>
+      <app:pinned/>
+    </extensions>
+  </wpt>
+  <trk>
+    <name>Harbour loop</name>
+    <trkseg>
+      <trkpt lat="54.5933490" lon="-3.1405820">
+        <ele>74.6</ele>
+        <time>2026-05-03T08:12:44Z</time>
+        <extensions>
+          <ns3:TrackPointExtension>
+            <ns3:hr>96.0</ns3:hr>
+            <ns3:cad>71</ns3:cad>
+            <ns3:stress>12</ns3:stress>
+          </ns3:TrackPointExtension>
+          <app:snapshot>
+            <app:metadata>
+              <name>Not the document name either</name>
+            </app:metadata>
+            <app:wpt lat="1" lon="2"/>
+            <app:trk>
+              <app:trkseg>
+                <app:trkpt lat="3" lon="4"/>
+              </app:trkseg>
+            </app:trk>
+            <app:link href="https://example.com/not-a-waypoint-link"/>
+          </app:snapshot>
+        </extensions>
+      </trkpt>
+      <trkpt lat="54.5933930" lon="-3.1406900">
+        <ele>NaN</ele>
+        <time>2026-05-03T08:12:45Z</time>
+        <extensions>
+          <ns3:TrackPointExtension>
+            <ns3:hr>resting</ns3:hr>
+          </ns3:TrackPointExtension>
+        </extensions>
+      </trkpt>
+      <trkpt lat="54.5934480" lon="-3.1408070">
+        <ele>74.8</ele>
+        <time>2026-05-03T08:12:46Z</time>
+        <extensions>
+          <ns3:TrackPointExtension/>
+        </extensions>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

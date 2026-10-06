@@ -44,11 +44,13 @@ extension GPXDocument {
             check(waypoint, path: "waypoints[\(index)]", into: &issues)
         }
         for (routeIndex, route) in routes.enumerated() {
+            check(route.extensions, path: "routes[\(routeIndex)].extensions", into: &issues)
             for (pointIndex, point) in route.points.enumerated() {
                 check(point, path: "routes[\(routeIndex)].points[\(pointIndex)]", into: &issues)
             }
         }
         for (trackIndex, track) in tracks.enumerated() {
+            check(track.extensions, path: "tracks[\(trackIndex)].extensions", into: &issues)
             for (segmentIndex, segment) in track.segments.enumerated() {
                 for (pointIndex, point) in segment.points.enumerated() {
                     check(
@@ -57,6 +59,11 @@ extension GPXDocument {
                         into: &issues
                     )
                 }
+                check(
+                    segment.extensions,
+                    path: "tracks[\(trackIndex)].segments[\(segmentIndex)].extensions",
+                    into: &issues
+                )
             }
         }
 
@@ -117,13 +124,25 @@ extension GPXDocument {
             ("vdop", point.verticalDilution),
             ("pdop", point.positionDilution),
             ("ageofdgpsdata", point.ageOfDGPSData),
-            ("atemp", point.extensions?.airTemperature),
-            ("wtemp", point.extensions?.waterTemperature),
-            ("depth", point.extensions?.depth),
-            ("speed", point.extensions?.speed),
-            ("course", point.extensions?.course),
-            ("bearing", point.extensions?.bearing),
-            ("power", point.extensions?.power),
+        ]
+        for (element, value) in numericFields {
+            if let value, !value.isFinite {
+                issues.append(.nonFiniteValue(element: element, path: path))
+            }
+        }
+        check(point.extensions, path: path, into: &issues)
+    }
+
+    private func check(_ extensions: GPXExtensions?, path: String, into issues: inout [GPXValidationIssue]) {
+        guard let extensions else { return }
+        let numericFields: [(String, Double?)] = [
+            ("atemp", extensions.airTemperature),
+            ("wtemp", extensions.waterTemperature),
+            ("depth", extensions.depth),
+            ("speed", extensions.speed),
+            ("course", extensions.course),
+            ("bearing", extensions.bearing),
+            ("power", extensions.power),
         ]
         for (element, value) in numericFields {
             if let value, !value.isFinite {

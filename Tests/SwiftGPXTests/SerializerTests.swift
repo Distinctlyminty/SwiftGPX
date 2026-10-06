@@ -62,7 +62,8 @@ struct SerializerTests {
             GPXWaypoint(latitude: 1, longitude: 2),
         ])
         let xml = try GPXSerializer(prettyPrint: false).string(from: document)
-        #expect(!xml.contains("\n  "))
+        #expect(!xml.contains("\n"))
+        expectSchemaShapedGPX(Data(xml.utf8))
     }
 
     @Test func declaresV2NamespaceWhenV2FieldsPresent() throws {
@@ -159,6 +160,8 @@ struct SerializerTests {
         (3.1415926535, "3.1415927"),    // 7 decimal places max
         (-3.2, "-3.2"),
         (1_000_000.0, "1000000"),
+        (-0.00000001, "0"),             // rounds to zero — no "-0"
+        (0.00000006, "0.0000001"),
     ])
     func formatNumberTable(value: Double, expected: String) {
         #expect(formatNumber(value) == expected)
@@ -190,6 +193,101 @@ struct SerializerTests {
 
         """
         #expect(xml == expected)
+    }
+
+    /// The TrackPointExtension schema is an xsd:sequence, so child order is part of validity.
+    @Test func emitsGarminFieldsInSchemaOrder() throws {
+        let waypoint = GPXWaypoint(
+            latitude: 1, longitude: 2,
+            extensions: GPXExtensions(
+                heartRate: 142, cadence: 75, airTemperature: 14.5, waterTemperature: 9.5,
+                depth: 3.2, speed: 2.5, course: 184.5, bearing: 190
+            )
+        )
+        let document = GPXDocument(creator: "Test", waypoints: [waypoint])
+        let xml = try GPXSerializer(prettyPrint: false).string(from: document)
+        let expected = [
+            "<gpxtpx:TrackPointExtension>",
+            "<gpxtpx:atemp>14.5</gpxtpx:atemp>",
+            "<gpxtpx:wtemp>9.5</gpxtpx:wtemp>",
+            "<gpxtpx:depth>3.2</gpxtpx:depth>",
+            "<gpxtpx:hr>142</gpxtpx:hr>",
+            "<gpxtpx:cad>75</gpxtpx:cad>",
+            "<gpxtpx:speed>2.5</gpxtpx:speed>",
+            "<gpxtpx:course>184.5</gpxtpx:course>",
+            "<gpxtpx:bearing>190</gpxtpx:bearing>",
+            "</gpxtpx:TrackPointExtension>",
+        ].joined()
+        #expect(xml.contains(expected))
+    }
+
+    @Test func dropsCharactersXMLCannotRepresent() throws {
+        let document = GPXDocument(creator: "A\u{0}pp", waypoints: [
+            GPXWaypoint(latitude: 1, longitude: 2, name: "Pier\u{1}\u{B} & \u{FFFE}jetty\u{1F}"),
+        ])
+        let data = try GPXSerializer().data(from: document)
+        expectSchemaShapedGPX(data)
+        let decoded = try GPXParser().parse(data)
+        #expect(decoded.creator == "App")
+        #expect(decoded.waypoints[0].name == "Pier & jetty")
+    }
+
+    /// A namespace map that collides with the declarations the serializer writes itself,
+    /// or that isn't expressible as an attribute, must not produce a malformed root.
+    @Test func skipsNamespaceDeclarationsThatWouldBreakTheRoot() throws {
+        let waypoint = GPXWaypoint(
+            latitude: 1, longitude: 2,
+            extensions: GPXExtensions(heartRate: 130, custom: [
+                GPXCustomExtension(qualifiedName: "bad prefix:lap", value: "1"),
+                GPXCustomExtension(qualifiedName: "ok:lap", value: "2"),
+            ])
+        )
+        let document = GPXDocument(
+            creator: "Test", waypoints: [waypoint],
+            namespaces: [
+                "gpxtpx": "urn:example:not-garmin",
+                "xsi": "urn:example:not-xsi",
+                "xml": "urn:example:reserved",
+                "bad prefix": "urn:example:bad",
+                "empty": "",
+                "ok": "urn:example:ok",
+            ]
+        )
+        let xml = try GPXSerializer().string(from: document)
+        expectSchemaShapedGPX(Data(xml.utf8))
+        #expect(xml.contains("xmlns:gpxtpx=\"http://www.garmin.com/xmlschemas/TrackPointExtension/v1\""))
+        #expect(xml.contains("xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""))
+        #expect(xml.contains("xmlns:ok=\"urn:example:ok\""))
+        #expect(!xml.contains("urn:example:not-"))
+        #expect(!xml.contains("urn:example:reserved"))
+        #expect(!xml.contains("urn:example:bad"))
+        #expect(!xml.contains("xmlns:empty"))
+        #expect(xml.contains("<lap>1</lap>"))
+        #expect(xml.contains("<ok:lap>2</ok:lap>"))
+    }
+
+    @Test(arguments: [
+        ("lap count", "lap_count"),
+        ("1st", "_1st"),
+        ("a<b>", "a_b_"),
+        ("", "_"),
+        ("gpxdata:lap:count", "gpxdata:lap_count"),
+        ("gpxdata:", "gpxdata:_"),
+        ("gpxdata:run-cadence.avg_2", "gpxdata:run-cadence.avg_2"),
+        ("Länge", "Länge"),
+    ])
+    func sanitizesCustomExtensionNames(name: String, expected: String) throws {
+        let waypoint = GPXWaypoint(
+            latitude: 1, longitude: 2,
+            extensions: GPXExtensions(custom: [GPXCustomExtension(qualifiedName: name, value: "7")])
+        )
+        let document = GPXDocument(
+            creator: "Test", waypoints: [waypoint],
+            namespaces: ["gpxdata": "http://www.cluetrust.com/XML/GPXDATA/1/0"]
+        )
+        let xml = try GPXSerializer().string(from: document)
+        expectSchemaShapedGPX(Data(xml.utf8))
+        #expect(xml.contains("<\(expected)>7</\(expected)>"))
     }
 
     @Test func redeclaresHarvestedNamespaces() throws {
